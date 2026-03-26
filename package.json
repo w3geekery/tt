@@ -12,6 +12,9 @@
     "build:mcp": "tsc -p tsconfig.mcp.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "migrate": "tsx scripts/migrate-from-neon.ts",
+    "backup": "tsx scripts/backup.ts",
+    "restore": "tsx scripts/restore.ts",
     "release": "standard-version",
     "release:minor": "standard-version --release-as minor",
     "release:major": "standard-version --release-as major"
