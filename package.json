@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:ui\"",
     "dev:server": "tsx watch src/core/server/index.ts",
-    "dev:ui": "ng serve --port 4301",
-    "build": "tsc && ng build",
+    "dev:ui": "npm --prefix ui run start",
+    "build": "tsc && npm --prefix ui run build",
     "build:mcp": "tsc -p tsconfig.mcp.json",
     "test": "vitest run",
     "test:watch": "vitest",

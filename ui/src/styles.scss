@@ -1,0 +1,42 @@
+@use '@angular/material' as mat;
+
+html {
+  height: 100%;
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$cyan-palette,
+        tertiary: mat.$violet-palette,
+      ),
+      typography: Roboto,
+      density: -1,
+    )
+  );
+}
+
+body {
+  color-scheme: light dark;
+  background-color: var(--mat-sys-surface);
+  color: var(--mat-sys-on-surface);
+  font: var(--mat-sys-body-medium);
+  margin: 0;
+  height: 100%;
+}
+
+.page-container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.timer-state-running {
+  color: var(--mat-sys-primary);
+}
+
+.timer-state-paused {
+  color: var(--mat-sys-tertiary);
+}
+
+.timer-state-stopped {
+  color: var(--mat-sys-on-surface-variant);
+}
