@@ -18,6 +18,7 @@ import { tasksRouter } from './routes/tasks.js';
 import { capStatusRouter } from './routes/cap-status.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { recurringRouter } from './routes/recurring.js';
+import { invoicesRouter } from './routes/invoices.js';
 import { startCron } from '../cron/engine.js';
 
 export function createApp() {
@@ -32,6 +33,7 @@ export function createApp() {
   app.use('/api/cap-status', capStatusRouter);
   app.use('/api/notifications', notificationsRouter);
   app.use('/api/recurring', recurringRouter);
+  app.use('/api/invoices', invoicesRouter);
   app.get('/api/sse', sseHandler);
 
   return app;
