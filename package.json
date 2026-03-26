@@ -1,0 +1,34 @@
+{
+  "name": "tt",
+  "version": "0.1.0",
+  "description": "Local-first time tracker with MCP integration",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:ui\"",
+    "dev:server": "tsx watch src/core/server/index.ts",
+    "dev:ui": "ng serve --port 4301",
+    "build": "tsc && ng build",
+    "build:mcp": "tsc -p tsconfig.mcp.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "release": "standard-version",
+    "release:minor": "standard-version --release-as minor",
+    "release:major": "standard-version --release-as major"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "express": "^5.1.0",
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "concurrently": "^9.0.0",
+    "standard-version": "^9.5.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.8.0",
+    "vitest": "^4.0.0"
+  }
+}
