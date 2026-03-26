@@ -18,6 +18,7 @@ import { tasksRouter } from './routes/tasks.js';
 import { capStatusRouter } from './routes/cap-status.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { recurringRouter } from './routes/recurring.js';
+import { startCron } from '../cron/engine.js';
 
 export function createApp() {
   const app = express();
@@ -39,12 +40,13 @@ export function createApp() {
 // Start server when run directly
 const isDirectRun = process.argv[1]?.includes('server');
 if (isDirectRun) {
-  // Initialize DB and extensions
-  getDb(config.db);
+  // Initialize DB, extensions, and cron
+  const db = getDb(config.db);
   loadExtensions(config.extensions);
 
   const app = createApp();
   app.listen(config.port, () => {
     console.log(`tt running on http://localhost:${config.port}`);
+    startCron(db);
   });
 }
