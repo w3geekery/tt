@@ -50,9 +50,12 @@ Tracking missing features from the old Angular app that need to be ported to tt.
 - [x] list_weekly_tasks — tasks used this week with hours
 - [x] get_timeline_settings, set_timeline_hours
 
-## Slash Commands (need /tt equivalents)
-- [ ] `/tt` — main time tracking CLI (port from `/ttui`)
-- [ ] `/ss` — SpecStory session scanner (cross-repo aggregator)
+## Slash Commands
+- [x] `/tt` — main time tracking CLI (ported from `/ttui`, uses `mcp__tt__*`)
+- [x] `/tt:autocap` — auto-switch at ZeroBias daily cap
+- [x] `/tt:backfill` — populate timer notes from SpecStory sessions (SQLite cache)
+- [x] `/tt:transcript` — process Marketplace Meeting transcripts
+- [x] `/ss` — SpecStory session scanner (SQLite cache)
 
 ## Extension Territory (private repo)
 These features involve proprietary business logic and belong in the extensions repo:
