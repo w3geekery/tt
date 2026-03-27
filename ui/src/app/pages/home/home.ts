@@ -14,6 +14,7 @@ import { SseService } from '../../services/sse.service';
 import { SnackbarService } from '../../services/snackbar.service';
 import { TimerCardComponent } from '../../components/timer-card/timer-card';
 import { CapBarComponent } from '../../components/cap-bar/cap-bar';
+import { SkeletonCardComponent } from '../../components/skeleton/skeleton';
 import { DurationPipe } from '../../pipes/duration.pipe';
 import type { Timer, Company, Project, CapStatus, TimerSegment } from '../../models/types';
 
@@ -23,7 +24,7 @@ import type { Timer, Company, Project, CapStatus, TimerSegment } from '../../mod
   imports: [
     CommonModule, MatButtonModule, MatIconModule, MatSelectModule,
     MatFormFieldModule, MatInputModule, MatDividerModule, MatChipsModule, FormsModule,
-    TimerCardComponent, CapBarComponent, DurationPipe,
+    TimerCardComponent, CapBarComponent, SkeletonCardComponent, DurationPipe,
   ],
   template: `
     <h2>Today</h2>
@@ -114,7 +115,12 @@ import type { Timer, Company, Project, CapStatus, TimerSegment } from '../../mod
       />
     }
 
-    @if (!filteredTimers.length) {
+    @if (loading) {
+      <app-skeleton-card />
+      <app-skeleton-card />
+    }
+
+    @if (!loading && !filteredTimers.length) {
       <p class="empty">No timers yet today. Start one above!</p>
     }
   `,
@@ -163,6 +169,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   companyMap = new Map<string, string>();
   projectMap = new Map<string, string>();
 
+  loading = true;
   newTimer = { company_id: '', project_id: null as string | null, notes: '' };
 
   get filteredProjects(): Project[] {
@@ -211,6 +218,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     const today = new Date().toISOString().slice(0, 10);
     this.api.getTimersByDate(today).subscribe(list => {
       this.todayTimers = list;
+      this.loading = false;
       this.updateCompanyChips(list);
       for (const t of list) {
         this.api.getSegments(t.id).subscribe(segs => this.segmentsMap.set(t.id, segs));

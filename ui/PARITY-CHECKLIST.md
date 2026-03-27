@@ -6,7 +6,7 @@ Tracking missing features from the old Angular app that need to be ported to tt.
 - [x] Snackbar notifications — feedback after actions (start, stop, create, delete, etc.)
 - [x] Dark/light/system theme toggle with localStorage persistence
 - [x] Keyboard shortcut — R to refresh
-- [ ] Skeleton loaders — shimmer placeholders while data loads
+- [x] Skeleton loaders — shimmer placeholders while data loads
 - [x] Inline time editing — click to edit start/end times on timer cards
 - [x] Inline notes editing (plain text, markdown deferred)
 - [x] Stop-at-time split menu — schedule a future stop time
@@ -16,7 +16,7 @@ Tracking missing features from the old Angular app that need to be ported to tt.
 
 ## Timer Features
 - [ ] Timer templates — quick-pick buttons for most-used company/project/task combos
-- [ ] Scheduled timers — create timers with start_at for future auto-start
+- [x] Scheduled timers — create timers with start_at for future auto-start (via dialog)
 - [ ] Make-recurring from timer — convert one-off to recurring rule
 - [ ] Per-segment notes
 
@@ -34,7 +34,7 @@ Tracking missing features from the old Angular app that need to be ported to tt.
 - [x] Timer update support (notes, times) from cards
 
 ## Dialogs
-- [ ] New timer dialog with inline create for company/project/task
+- [x] New timer dialog with inline create for company/project/task (+ schedule option)
 - [ ] Changelog dialog
 
 ## Data
