@@ -7,6 +7,7 @@ import * as tasks from './tasks.js';
 import * as timers from './timers.js';
 import * as recurring from './recurring.js';
 import * as notifications from './notifications.js';
+import * as specstory from './specstory.js';
 import { generateSlug } from './slug.js';
 
 function freshDb(): Database.Database {
@@ -374,5 +375,97 @@ describe('Notifications', () => {
     const n = notifications.create(db, { type: 'x', title: 'Already fired', trigger_at: '2026-03-26T12:00:00.000Z' });
     notifications.markFired(db, n.id);
     expect(notifications.cancel(db, n.id)).toBe(false);
+  });
+});
+
+describe('SpecStory sessions', () => {
+  let db: Database.Database;
+  beforeEach(() => { db = freshDb(); });
+
+  const session1 = {
+    path: '/Users/cstacer/Projects/w3geekery/tt/.specstory/history/session1.md',
+    repo: 'tt',
+    company: 'W3Geekery',
+    started: '2026-03-26T09:00:00.000Z',
+    ended: '2026-03-26T12:00:00.000Z',
+    size_bytes: 5000,
+    summary: 'Built database layer with 33 tests',
+  };
+
+  const session2 = {
+    path: '/Users/cstacer/Projects/zb/sme-mart/.specstory/history/session2.md',
+    repo: 'sme-mart',
+    company: 'ZeroBias',
+    started: '2026-03-26T13:00:00.000Z',
+    ended: '2026-03-26T17:00:00.000Z',
+    size_bytes: 8000,
+    summary: 'Refactored NoteHierarchyService',
+  };
+
+  it('upserts and retrieves by path', () => {
+    specstory.upsert(db, session1);
+    const found = specstory.findByPath(db, session1.path);
+    expect(found).toBeTruthy();
+    expect(found!.repo).toBe('tt');
+    expect(found!.summary).toBe('Built database layer with 33 tests');
+    expect(found!.cached_at).toBeTruthy();
+  });
+
+  it('upserts updates existing entry', () => {
+    specstory.upsert(db, session1);
+    specstory.upsert(db, { ...session1, size_bytes: 6000, summary: 'Updated summary' });
+    const found = specstory.findByPath(db, session1.path);
+    expect(found!.size_bytes).toBe(6000);
+    expect(found!.summary).toBe('Updated summary');
+  });
+
+  it('finds by date', () => {
+    specstory.upsert(db, session1);
+    specstory.upsert(db, session2);
+
+    const results = specstory.findByDate(db, '2026-03-26');
+    expect(results).toHaveLength(2);
+    expect(results[0].repo).toBe('tt');
+    expect(results[1].repo).toBe('sme-mart');
+  });
+
+  it('finds by date range', () => {
+    specstory.upsert(db, session1);
+    specstory.upsert(db, { ...session2, started: '2026-03-27T09:00:00.000Z', ended: '2026-03-27T12:00:00.000Z' });
+
+    const results = specstory.findByDateRange(db, '2026-03-26', '2026-03-27');
+    expect(results).toHaveLength(2);
+
+    const onlyFirst = specstory.findByDateRange(db, '2026-03-26', '2026-03-26');
+    expect(onlyFirst).toHaveLength(1);
+  });
+
+  it('finds by repo', () => {
+    specstory.upsert(db, session1);
+    specstory.upsert(db, session2);
+
+    expect(specstory.findByRepo(db, 'tt')).toHaveLength(1);
+    expect(specstory.findByRepo(db, 'sme-mart')).toHaveLength(1);
+    expect(specstory.findByRepo(db, 'nonexistent')).toHaveLength(0);
+  });
+
+  it('detects stale entries by size', () => {
+    specstory.upsert(db, session1);
+    expect(specstory.findStale(db, session1.path, 5000)).toBe(false);
+    expect(specstory.findStale(db, session1.path, 6000)).toBe(true);
+    expect(specstory.findStale(db, '/nonexistent', 100)).toBe(true);
+  });
+
+  it('batch upserts', () => {
+    specstory.upsertBatch(db, [session1, session2]);
+    expect(specstory.findByDate(db, '2026-03-26')).toHaveLength(2);
+  });
+
+  it('removes stale paths', () => {
+    specstory.upsertBatch(db, [session1, session2]);
+    const removed = specstory.removeStalePaths(db, [session1.path]);
+    expect(removed).toBe(1);
+    expect(specstory.findByPath(db, session1.path)).toBeTruthy();
+    expect(specstory.findByPath(db, session2.path)).toBeUndefined();
   });
 });

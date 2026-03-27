@@ -91,6 +91,17 @@ CREATE TABLE IF NOT EXISTS timer_segments (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS specstory_sessions (
+  path TEXT PRIMARY KEY,
+  repo TEXT NOT NULL,
+  company TEXT,
+  started TEXT,
+  ended TEXT,
+  size_bytes INTEGER NOT NULL,
+  summary TEXT,
+  cached_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS notifications (
   id TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
   type TEXT NOT NULL,
