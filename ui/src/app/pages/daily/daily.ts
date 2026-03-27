@@ -6,18 +6,20 @@ import { MatDatepickerModule } from '@angular/material/datepicker';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatNativeDateModule } from '@angular/material/core';
+import { MatChipsModule } from '@angular/material/chips';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
+import { SnackbarService } from '../../services/snackbar.service';
 import { TimerCardComponent } from '../../components/timer-card/timer-card';
 import { DurationPipe } from '../../pipes/duration.pipe';
-import type { Timer, Company, Project } from '../../models/types';
+import type { Timer, TimerSegment } from '../../models/types';
 
 @Component({
   selector: 'app-daily',
   standalone: true,
   imports: [
     CommonModule, MatButtonModule, MatIconModule, MatDatepickerModule,
-    MatFormFieldModule, MatInputModule, MatNativeDateModule, FormsModule,
+    MatFormFieldModule, MatInputModule, MatNativeDateModule, MatChipsModule, FormsModule,
     TimerCardComponent, DurationPipe,
   ],
   template: `
@@ -30,22 +32,39 @@ import type { Timer, Company, Project } from '../../models/types';
         <mat-datepicker #picker />
       </mat-form-field>
       <button mat-icon-button (click)="nextDay()"><mat-icon>chevron_right</mat-icon></button>
+      @if (!isToday) {
+        <button mat-stroked-button (click)="goToday()">Today</button>
+      }
       <span class="total">{{ totalMs | duration:'decimal' }}</span>
     </div>
 
-    @for (timer of timers; track timer.id) {
+    <!-- Company filter chips -->
+    @if (companyChips.length > 1) {
+      <div class="filter-chips">
+        @for (chip of companyChips; track chip.id) {
+          <mat-chip-option [selected]="chip.selected" (selectionChange)="chip.selected = !chip.selected">
+            {{ chip.name }}
+          </mat-chip-option>
+        }
+      </div>
+    }
+
+    @for (timer of filteredTimers; track timer.id) {
       <app-timer-card
         [timer]="timer"
         [companyName]="companyMap.get(timer.company_id) ?? ''"
         [projectName]="timer.project_id ? (projectMap.get(timer.project_id) ?? '') : ''"
+        [segments]="segmentsMap.get(timer.id) ?? []"
         (start)="onAction('start', $event)"
         (stop)="onAction('stop', $event)"
         (pause)="onAction('pause', $event)"
         (resume)="onAction('resume', $event)"
+        (deleteTimer)="onAction('delete', $event)"
+        (updateTimer)="onUpdate($event)"
       />
     }
 
-    @if (!timers.length) {
+    @if (!filteredTimers.length) {
       <p class="empty">No timers for this date.</p>
     }
   `,
@@ -62,6 +81,12 @@ import type { Timer, Company, Project } from '../../models/types';
       font-weight: 500;
       color: var(--mat-sys-primary);
     }
+    .filter-chips {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
     .empty {
       color: var(--mat-sys-on-surface-variant);
       text-align: center;
@@ -71,14 +96,27 @@ import type { Timer, Company, Project } from '../../models/types';
 })
 export class DailyComponent implements OnInit {
   private api = inject(ApiService);
+  private snack = inject(SnackbarService);
 
   selectedDate = new Date();
   timers: Timer[] = [];
   companyMap = new Map<string, string>();
   projectMap = new Map<string, string>();
+  segmentsMap = new Map<string, TimerSegment[]>();
+  companyChips: Array<{ id: string; name: string; selected: boolean }> = [];
+
+  get isToday(): boolean {
+    return this.selectedDate.toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10);
+  }
+
+  get filteredTimers(): Timer[] {
+    const selected = this.companyChips.filter(c => c.selected).map(c => c.id);
+    if (selected.length === 0 || selected.length === this.companyChips.length) return this.timers;
+    return this.timers.filter(t => selected.includes(t.company_id));
+  }
 
   get totalMs(): number {
-    return this.timers.reduce((sum, t) => sum + (t.duration_ms ?? 0), 0);
+    return this.filteredTimers.reduce((sum, t) => sum + (t.duration_ms ?? 0), 0);
   }
 
   ngOnInit(): void {
@@ -99,16 +137,48 @@ export class DailyComponent implements OnInit {
     this.loadTimers();
   }
 
+  goToday(): void {
+    this.selectedDate = new Date();
+    this.loadTimers();
+  }
+
   onAction(action: string, timer: Timer): void {
     const obs = action === 'start' ? this.api.startTimer(timer.id)
       : action === 'stop' ? this.api.stopTimer(timer.id)
       : action === 'pause' ? this.api.pauseTimer(timer.id)
+      : action === 'delete' ? this.api.deleteTimer(timer.id) as any
       : this.api.resumeTimer(timer.id);
-    obs.subscribe(() => this.loadTimers());
+    obs.subscribe(() => {
+      const verb = action.charAt(0).toUpperCase() + action.slice(1) + (action.endsWith('e') ? 'd' : 'ed');
+      this.snack.show(`${verb} ${timer.slug}`);
+      this.loadTimers();
+    });
+  }
+
+  onUpdate(event: { id: string; changes: Record<string, unknown> }): void {
+    this.api.updateTimer(event.id, event.changes as Partial<Timer>).subscribe(() => {
+      this.snack.show('Timer updated');
+      this.loadTimers();
+    });
   }
 
   private loadTimers(): void {
     const dateStr = this.selectedDate.toISOString().slice(0, 10);
-    this.api.getTimersByDate(dateStr).subscribe(list => this.timers = list);
+    this.api.getTimersByDate(dateStr).subscribe(list => {
+      this.timers = list;
+      this.updateChips(list);
+      for (const t of list) {
+        this.api.getSegments(t.id).subscribe(segs => this.segmentsMap.set(t.id, segs));
+      }
+    });
+  }
+
+  private updateChips(timers: Timer[]): void {
+    const ids = new Set(timers.map(t => t.company_id));
+    this.companyChips = [...ids].map(id => ({
+      id,
+      name: this.companyMap.get(id) ?? id,
+      selected: this.companyChips.find(c => c.id === id)?.selected ?? true,
+    }));
   }
 }
