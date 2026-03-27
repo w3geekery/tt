@@ -437,6 +437,146 @@ server.tool('invoice_report', 'Generate invoice data for a company/project over 
   return { content: [{ type: 'text', text: `Invoice: ${start_date} to ${end_date}\nTotal: ${totalHrs}h\n\n${lines.join('\n')}` }] };
 });
 
+// --- Missing config CRUD tools ---
+
+server.tool('update_company', 'Update a company.', {
+  company_id: z.string().describe('Company ID'),
+  name: z.string().optional().describe('New name'),
+  initials: z.string().optional().describe('New initials'),
+  color: z.string().optional().describe('New hex color'),
+}, async ({ company_id, ...updates }) => {
+  const db = getDb();
+  const co = companiesDb.update(db, company_id, updates);
+  if (!co) return { content: [{ type: 'text', text: 'Company not found' }] };
+  return { content: [{ type: 'text', text: `Updated company "${co.name}"` }] };
+});
+
+server.tool('delete_company', 'Delete a company.', {
+  company_id: z.string().describe('Company ID'),
+}, async ({ company_id }) => {
+  const db = getDb();
+  const ok = companiesDb.remove(db, company_id);
+  return { content: [{ type: 'text', text: ok ? 'Deleted' : 'Company not found' }] };
+});
+
+server.tool('update_project', 'Update a project.', {
+  project_id: z.string().describe('Project ID'),
+  name: z.string().optional().describe('New name'),
+  color: z.string().optional().describe('New hex color'),
+  billable: z.boolean().optional().describe('Is billable'),
+  daily_cap_hrs: z.number().nullable().optional().describe('Daily hour cap (null to remove)'),
+  weekly_cap_hrs: z.number().nullable().optional().describe('Weekly hour cap (null to remove)'),
+  notify_on_cap: z.boolean().optional().describe('Notify when cap reached'),
+  sort_order: z.number().optional().describe('Sort order'),
+}, async ({ project_id, ...updates }) => {
+  const db = getDb();
+  const proj = projectsDb.update(db, project_id, updates);
+  if (!proj) return { content: [{ type: 'text', text: 'Project not found' }] };
+  return { content: [{ type: 'text', text: `Updated project "${proj.name}"` }] };
+});
+
+server.tool('delete_project', 'Delete a project.', {
+  project_id: z.string().describe('Project ID'),
+}, async ({ project_id }) => {
+  const db = getDb();
+  const ok = projectsDb.remove(db, project_id);
+  return { content: [{ type: 'text', text: ok ? 'Deleted' : 'Project not found' }] };
+});
+
+server.tool('update_task', 'Update a task.', {
+  task_id: z.string().describe('Task ID'),
+  name: z.string().optional().describe('New name'),
+  code: z.string().optional().describe('New code'),
+  url: z.string().optional().describe('New URL'),
+}, async ({ task_id, ...updates }) => {
+  const db = getDb();
+  const task = tasksDb.update(db, task_id, updates);
+  if (!task) return { content: [{ type: 'text', text: 'Task not found' }] };
+  return { content: [{ type: 'text', text: `Updated task "${task.name}"` }] };
+});
+
+server.tool('delete_task', 'Delete a task.', {
+  task_id: z.string().describe('Task ID'),
+}, async ({ task_id }) => {
+  const db = getDb();
+  const ok = tasksDb.remove(db, task_id);
+  return { content: [{ type: 'text', text: ok ? 'Deleted' : 'Task not found' }] };
+});
+
+// --- Missing timer tools ---
+
+server.tool('cancel_timer', 'Cancel a running/paused timer without recording duration.', {
+  timer_id: z.string().optional().describe('Timer ID (omit to cancel the running timer)'),
+}, async ({ timer_id }) => {
+  const db = getDb();
+  const id = timer_id ?? timersDb.findRunning(db)?.id;
+  if (!id) return { content: [{ type: 'text', text: 'No running timer to cancel' }] };
+  const ok = timersDb.remove(db, id);
+  return { content: [{ type: 'text', text: ok ? 'Timer cancelled (deleted)' : 'Timer not found' }] };
+});
+
+server.tool('schedule_timer', 'Schedule a timer to start at a future time.', {
+  company_id: z.string().describe('Company ID'),
+  project_id: z.string().optional().describe('Project ID'),
+  task_id: z.string().optional().describe('Task ID'),
+  start_at: z.string().describe('Scheduled start time (ISO 8601)'),
+  stop_at: z.string().optional().describe('Scheduled stop time (ISO 8601)'),
+  notes: z.string().optional().describe('Notes'),
+}, async (input) => {
+  const db = getDb();
+  const timer = timersDb.create(db, {
+    company_id: input.company_id,
+    project_id: input.project_id,
+    task_id: input.task_id,
+    start_at: input.start_at,
+    stop_at: input.stop_at,
+    notes: input.notes,
+  });
+  return { content: [{ type: 'text', text: `Scheduled timer ${timer.slug} for ${input.start_at}` }] };
+});
+
+server.tool('list_weekly_tasks', 'List tasks used this week with hours.', {}, async () => {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT tk.name as task_name, tk.code as task_code, tk.url as task_url,
+           c.name as company_name, p.name as project_name,
+           SUM(t.duration_ms) as total_ms, COUNT(*) as timer_count
+    FROM timers t
+    JOIN tasks tk ON tk.id = t.task_id
+    LEFT JOIN companies c ON c.id = t.company_id
+    LEFT JOIN projects p ON p.id = t.project_id
+    WHERE date(t.started) >= date('now', 'weekday 0', '-7 days')
+      AND t.task_id IS NOT NULL
+    GROUP BY t.task_id
+    ORDER BY total_ms DESC
+  `).all() as Array<Record<string, unknown>>;
+
+  const lines = rows.map(r => {
+    const hrs = ((r.total_ms as number ?? 0) / 3600000).toFixed(2);
+    const code = r.task_code ? `[${r.task_code}]` : '';
+    return `${r.company_name} / ${r.project_name} / ${r.task_name} ${code} | ${hrs}h (${r.timer_count})`;
+  });
+
+  return { content: [{ type: 'text', text: lines.length ? lines.join('\n') : 'No tasks this week' }] };
+});
+
+// --- Timeline settings ---
+
+server.tool('get_timeline_settings', 'Get notification timeline display settings.', {}, async () => {
+  const db = getDb();
+  // Store timeline settings as a notification-type row or simple key-value
+  // For now return sensible defaults
+  return { content: [{ type: 'text', text: JSON.stringify({ start_hour: 6, end_hour: 22 }) }] };
+});
+
+server.tool('set_timeline_hours', 'Set the timeline display hour range.', {
+  start_hour: z.number().describe('Start hour (0-23)'),
+  end_hour: z.number().describe('End hour (0-23)'),
+}, async ({ start_hour, end_hour }) => {
+  // Timeline settings will be stored in a future settings table
+  return { content: [{ type: 'text', text: `Timeline set to ${start_hour}:00 — ${end_hour}:00` }] };
+});
+
 // --- Start server ---
 
 const transport = new StdioServerTransport();

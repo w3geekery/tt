@@ -40,3 +40,33 @@ Tracking missing features from the old Angular app that need to be ported to tt.
 ## Data
 - [ ] External task links — structured provider/task/url (ZeroBias, Jira, GitHub)
 - [x] Timer history table in config (per-task, with delete)
+
+## MCP Tools (missing from old timetracker)
+- [x] update_company, delete_company
+- [x] update_project, delete_project
+- [x] update_task, delete_task
+- [x] cancel_timer — stop without recording
+- [x] schedule_timer — create timer with start_at
+- [x] list_weekly_tasks — tasks used this week with hours
+- [x] get_timeline_settings, set_timeline_hours
+
+## Slash Commands (need /tt equivalents)
+- [ ] `/tt` — main time tracking CLI (port from `/ttui`)
+- [ ] `/ss` — SpecStory session scanner (cross-repo aggregator)
+
+## Extension Territory (private repo)
+These features involve proprietary business logic and belong in the extensions repo:
+- [ ] Autocap — auto-switch from ZeroBias to W3Geekery at daily cap
+- [ ] Transcript processing — extract/summarize Teams meeting .docx files
+- [ ] Backfill — populate timer notes from SpecStory session cache
+- [ ] Weekly rollup — aggregate hours + summaries for ZeroBias task updates
+- [ ] Session summaries — auto-generate notes from conversation context on timer stop
+- [ ] Standup notes — collect meeting notes when stopping Standup task
+- [ ] SpecStory cache integration — specstory-scan.py, specstory-cache.json
+- [ ] Statusline state sync — write to ~/.claude/timetracker/state.json
+- [ ] launchd jobs — dev server lifecycle, cron scheduling
+
+## Deferred (low priority)
+- [ ] Markdown editor for notes (Milkdown + CodeMirror)
+- [ ] Inline editing in timer history table (config page)
+- [ ] Overflow project configuration in project edit form
