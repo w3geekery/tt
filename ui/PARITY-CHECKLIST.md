@@ -21,8 +21,8 @@ Tracking missing features from the old Angular app that need to be ported to tt.
 - [ ] Per-segment notes
 
 ## Views
-- [ ] Weekly column layout — Mon-Fri columns with timers per day
-- [ ] Monthly calendar grid — clickable day cells, not just a table
+- [x] Weekly column layout — Mon-Fri columns with timers per day (respects weekend toggle)
+- [x] Monthly calendar grid — clickable day cells with company dots and hours
 - [ ] Notification timeline — SVG visual on daily page with hour markers
 - [ ] Config page drill-down — 4-level hierarchy (company → project → task → timer history)
 - [ ] Breadcrumb navigation
