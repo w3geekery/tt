@@ -1,14 +1,25 @@
-import { Injectable, signal } from '@angular/core';
-
-const WEEKENDS_KEY = 'tt-show-weekends';
+import { Injectable, signal, PLATFORM_ID, inject } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 
 @Injectable({ providedIn: 'root' })
 export class PreferencesService {
-  showWeekends = signal<boolean>(localStorage.getItem(WEEKENDS_KEY) === 'true');
+  private platformId = inject(PLATFORM_ID);
 
-  toggleWeekends(): void {
-    const next = !this.showWeekends();
-    this.showWeekends.set(next);
-    localStorage.setItem(WEEKENDS_KEY, String(next));
+  showWeekend = signal(false);
+
+  constructor() {
+    if (isPlatformBrowser(this.platformId)) {
+      this.showWeekend.set(localStorage.getItem('tt-show-weekend') === 'true');
+    }
+  }
+
+  toggleWeekend() {
+    this.showWeekend.update((v) => {
+      const next = !v;
+      if (isPlatformBrowser(this.platformId)) {
+        localStorage.setItem('tt-show-weekend', String(next));
+      }
+      return next;
+    });
   }
 }

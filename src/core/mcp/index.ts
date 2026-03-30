@@ -358,7 +358,7 @@ server.tool('create_recurring_timer', 'Create a recurring timer.', {
   company_id: z.string().describe('Company ID'),
   project_id: z.string().optional().describe('Project ID'),
   task_id: z.string().optional().describe('Task ID'),
-  pattern: z.enum(['daily', 'weekly']).describe('Recurrence pattern'),
+  pattern: z.enum(['daily', 'weekdays', 'weekly']).describe('Recurrence pattern: daily (every day), weekdays (Mon-Fri), weekly (specific day)'),
   weekday: z.number().optional().describe('Day of week (0=Sun, 6=Sat) for weekly'),
   start_time: z.string().optional().describe('Start time (HH:MM)'),
   start_date: z.string().describe('Start date (YYYY-MM-DD)'),

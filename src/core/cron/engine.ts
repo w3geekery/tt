@@ -65,11 +65,15 @@ function materializeRecurring(db: Database.Database): void {
 
     // Check pattern
     if (rec.pattern === 'weekly' && rec.weekday !== dayOfWeek) continue;
+    if (rec.pattern === 'weekdays' && (dayOfWeek === 0 || dayOfWeek === 6)) continue;
 
-    // Check if already materialized today
+    // Check if already materialized today (by recurring_id OR by matching company/project/task)
     const existing = db.prepare(
-      `SELECT id FROM timers WHERE recurring_id = ? AND date(created_at) = date(?)`,
-    ).get(rec.id, todayStr);
+      `SELECT id FROM timers WHERE date(started) = date(?) AND (
+        recurring_id = ?
+        OR (company_id = ? AND COALESCE(project_id,'') = COALESCE(?,'') AND COALESCE(task_id,'') = COALESCE(?,''))
+      )`,
+    ).get(todayStr, rec.id, rec.company_id, rec.project_id ?? '', rec.task_id ?? '');
     if (existing) continue;
 
     // Create the timer
@@ -160,7 +164,89 @@ async function checkCaps(db: Database.Database): Promise<void> {
     }
 
     await runHook('onCapHit', project, 'daily');
+
+    // Autocap: if the running timer is on this project and overflow is configured, switch
+    if (project.overflow_company_id && project.overflow_project_id) {
+      const running = timersDb.findRunning(db);
+      if (running && running.project_id === project.id) {
+        // Stop running timer
+        const stopped = timersDb.stop(db, running.id);
+        broadcast('timer:stopped', stopped);
+        sendNotification('Autocap', `Stopped ${stopped.slug} — switching to overflow`);
+
+        // Start overflow timer
+        const overflow = timersDb.create(db, {
+          company_id: project.overflow_company_id,
+          project_id: project.overflow_project_id,
+          task_id: project.overflow_task_id ?? undefined,
+          notes: `Overflow from ${project.name} cap`,
+        });
+        const started = timersDb.start(db, overflow.id);
+        broadcast('timer:started', started);
+        sendNotification('Autocap', `Started ${started.slug} on overflow project`);
+      }
+    }
   }
+}
+
+/** Get autocap status for the currently running timer. */
+export function getAutocapStatus(db: Database.Database): AutocapStatus | null {
+  const running = timersDb.findRunning(db);
+  if (!running || !running.project_id) return null;
+
+  const project = projectsDb.findById(db, running.project_id);
+  if (!project || !project.daily_cap_hrs) return null;
+
+  // Calculate today's total for this project
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(duration_ms), 0) / 3600000.0 AS hrs
+    FROM timers WHERE date(started) = date('now') AND project_id = ?
+  `).get(running.project_id) as { hrs: number };
+
+  const completedHrs = row.hrs;
+  const elapsedHrs = running.started
+    ? (Date.now() - new Date(running.started).getTime()) / 3600000
+    : 0;
+  const totalHrs = completedHrs + elapsedHrs;
+  const remainingHrs = project.daily_cap_hrs - totalHrs;
+  const pct = Math.round((totalHrs / project.daily_cap_hrs) * 100);
+
+  if (remainingHrs <= 0) {
+    return {
+      status: 'at_cap',
+      project_name: project.name,
+      cap_hrs: project.daily_cap_hrs,
+      used_hrs: Math.round(totalHrs * 100) / 100,
+      remaining_hrs: 0,
+      pct: Math.min(pct, 100),
+      switch_at: null,
+      has_overflow: !!project.overflow_project_id,
+    };
+  }
+
+  const switchAt = new Date(Date.now() + remainingHrs * 3600000);
+
+  return {
+    status: pct >= 80 ? 'approaching' : 'ok',
+    project_name: project.name,
+    cap_hrs: project.daily_cap_hrs,
+    used_hrs: Math.round(totalHrs * 100) / 100,
+    remaining_hrs: Math.round(remainingHrs * 100) / 100,
+    pct,
+    switch_at: switchAt.toISOString(),
+    has_overflow: !!project.overflow_project_id,
+  };
+}
+
+export interface AutocapStatus {
+  status: 'ok' | 'approaching' | 'at_cap';
+  project_name: string;
+  cap_hrs: number;
+  used_hrs: number;
+  remaining_hrs: number;
+  pct: number;
+  switch_at: string | null;
+  has_overflow: boolean;
 }
 
 // Export for testing

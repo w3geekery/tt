@@ -1,0 +1,47 @@
+<mat-toolbar color="primary">
+  <span>Time Tracker</span>
+  <span class="spacer"></span>
+  <a mat-button routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">Home</a>
+  <a mat-button routerLink="/today" routerLinkActive="active">Today</a>
+  <a mat-button routerLink="/weekly" routerLinkActive="active">Weekly</a>
+  <a mat-button routerLink="/monthly" routerLinkActive="active">Monthly</a>
+  <button mat-icon-button (click)="refresh()" title="Refresh (R)">
+    <mat-icon>refresh</mat-icon>
+  </button>
+  <button mat-icon-button [matMenuTriggerFor]="configMenu" title="Settings">
+    <mat-icon>settings</mat-icon>
+  </button>
+</mat-toolbar>
+
+<mat-menu #configMenu="matMenu">
+  <div class="config-menu-toggle" (click)="$event.stopPropagation()">
+    <mat-icon class="config-menu-icon">dark_mode</mat-icon>
+    <span class="config-menu-toggle-label">Dark Theme</span>
+    <mat-slide-toggle [checked]="theme.isDark()" (change)="toggleDarkMode()" />
+  </div>
+
+  <mat-divider />
+
+  <div class="config-menu-toggle" (click)="$event.stopPropagation()">
+    <mat-icon class="config-menu-icon">weekend</mat-icon>
+    <span class="config-menu-toggle-label">Show Sat/Sun</span>
+    <mat-slide-toggle [checked]="prefs.showWeekend()" (change)="prefs.toggleWeekend()" />
+  </div>
+
+  <div class="config-menu-toggle" (click)="$event.stopPropagation()">
+    <mat-icon class="config-menu-icon">notifications</mat-icon>
+    <span class="config-menu-toggle-label">Cap Alerts</span>
+    <mat-slide-toggle [checked]="notifyOnCap()" (change)="toggleCapNotifications()" />
+  </div>
+
+  <mat-divider />
+
+  <a mat-menu-item routerLink="/config">
+    <mat-icon>tune</mat-icon>
+    <span>Config</span>
+  </a>
+
+  <button mat-menu-item class="config-menu-version" (click)="showChangelog()">v{{ version }}</button>
+</mat-menu>
+
+<router-outlet />

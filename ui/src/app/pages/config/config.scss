@@ -1,0 +1,291 @@
+.config-page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.skeleton-config {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px 0;
+}
+
+.login-prompt {
+  text-align: center;
+  padding: 64px 24px;
+
+  p {
+    margin: 16px 0 24px;
+    color: var(--mat-sys-on-surface-variant);
+  }
+}
+
+// Breadcrumb
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 2px;
+
+  button {
+    font-size: 0.9rem;
+    color: var(--mat-sys-on-surface-variant);
+
+    &.active {
+      color: var(--mat-sys-on-surface);
+      font-weight: 500;
+    }
+  }
+}
+
+.breadcrumb-separator {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+// Card grid
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.tasks-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+// Entity cards
+.entity-card {
+  cursor: pointer;
+  background: var(--mat-sys-surface-bright);
+  transition: box-shadow 0.15s, border-color 0.15s;
+
+  &:hover {
+    box-shadow: var(--mat-sys-level2);
+  }
+
+  &.selected {
+    outline: 2px solid var(--mat-sys-primary);
+    outline-offset: -2px;
+  }
+}
+
+.card-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+}
+
+.card-actions {
+  display: flex;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.card-color-bar {
+  width: 4px;
+  height: 36px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-name {
+  display: block;
+  font-weight: 500;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-meta {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--mat-sys-on-surface-variant);
+  margin-top: 2px;
+}
+
+// Task code link
+.task-code-link {
+  color: var(--mat-sys-primary);
+  text-decoration: none;
+  font-weight: 500;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+// Add card
+.add-card {
+  border: 2px dashed var(--mat-sys-outline-variant);
+  background: transparent;
+  box-shadow: none;
+
+  &:hover {
+    border-color: var(--mat-sys-primary);
+    box-shadow: none;
+  }
+}
+
+.add-body {
+  justify-content: center;
+  color: var(--mat-sys-on-surface-variant);
+  gap: 8px;
+
+  .add-card:hover & {
+    color: var(--mat-sys-primary);
+  }
+}
+
+.add-card-form {
+  cursor: default;
+}
+
+// Inline edit
+.edit-field {
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+.edit-color-row {
+  margin-bottom: 8px;
+}
+
+.color-label {
+  font-size: 12px;
+  color: var(--mat-sys-on-surface-variant);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.cap-row {
+  display: flex;
+  gap: 8px;
+}
+
+.cap-field {
+  flex: 1;
+  margin-bottom: 4px;
+}
+
+.overflow-section {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 8px;
+}
+
+.overflow-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--mat-sys-on-surface-variant);
+  display: block;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+// Drill-down sections
+.drill-section {
+  margin-top: 32px;
+
+  &:first-of-type {
+    margin-top: 0;
+  }
+}
+
+.section-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+  color: var(--mat-sys-on-surface);
+}
+
+.section-body {
+  background: var(--mat-sys-surface-container-low);
+  border-radius: 0 0 8px 8px;
+  padding: 16px;
+}
+
+// Timer entries table
+.timer-table-wrap {
+  overflow-x: auto;
+}
+
+.timer-table {
+  width: 100%;
+
+  .mat-mdc-header-cell {
+    font-weight: 600;
+    font-size: 0.8rem;
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  .mat-mdc-cell {
+    font-size: 0.875rem;
+  }
+}
+
+.time-input {
+  font-size: 0.8rem;
+  padding: 4px 6px;
+  border: 1px solid var(--mat-sys-outline);
+  border-radius: 4px;
+  background: var(--mat-sys-surface);
+  color: var(--mat-sys-on-surface);
+  max-width: 180px;
+}
+
+.notes-input {
+  font-size: 0.875rem;
+  padding: 4px 6px;
+  border: 1px solid var(--mat-sys-outline);
+  border-radius: 4px;
+  background: var(--mat-sys-surface);
+  color: var(--mat-sys-on-surface);
+  width: 100%;
+  min-width: 120px;
+}
+
+.notes-cell {
+  display: block;
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.empty-message {
+  color: var(--mat-sys-on-surface-variant);
+  font-size: 0.875rem;
+  text-align: center;
+  padding: 24px;
+}

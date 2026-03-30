@@ -6,7 +6,7 @@ export interface CreateRecurringInput {
   company_id: string;
   project_id?: string | null;
   task_id?: string | null;
-  pattern: 'daily' | 'weekly';
+  pattern: 'daily' | 'weekdays' | 'weekly';
   weekday?: number | null;
   start_time?: string | null;
   start_date: string;

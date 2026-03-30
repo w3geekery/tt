@@ -74,7 +74,7 @@ export interface TimerSegment {
   updated_at: string;
 }
 
-export type RecurringPattern = 'daily' | 'weekly';
+export type RecurringPattern = 'daily' | 'weekdays' | 'weekly';
 
 export interface RecurringTimer {
   id: string;

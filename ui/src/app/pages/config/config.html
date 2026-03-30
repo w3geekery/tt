@@ -1,0 +1,519 @@
+<div class="config-page">
+  @if (auth.loading()) {
+    <div class="skeleton-config">
+      <app-skeleton width="200px" height="1.5rem" />
+      <app-skeleton width="100%" height="48px" radius="8px" />
+      <app-skeleton width="100%" height="48px" radius="8px" />
+      <app-skeleton width="100%" height="48px" radius="8px" />
+    </div>
+  } @else if (!auth.user()) {
+    <div class="login-prompt">
+      <h1>Time Tracker</h1>
+      <p>Sign in to manage your configuration.</p>
+      <button mat-raised-button color="primary" (click)="auth.login()">
+        Sign in with GitHub
+      </button>
+    </div>
+  } @else {
+
+  <!-- Level 1: Companies -->
+  <section class="drill-section">
+    <h2 class="section-title">Companies</h2>
+    <div class="section-body">
+    <div class="card-grid">
+    @for (company of companies(); track company.id) {
+      <mat-card
+        class="entity-card"
+        [class.selected]="selectedCompany()?.id === company.id"
+        (click)="selectCompany(company)"
+      >
+        @if (editingCompanyId() === company.id) {
+          <mat-card-content (click)="$event.stopPropagation()">
+            <mat-form-field class="edit-field">
+              <mat-label>Name</mat-label>
+              <input matInput [(ngModel)]="editName" />
+            </mat-form-field>
+            <div class="edit-color-row">
+              <label class="color-label">Color</label>
+              <app-color-picker [(ngModel)]="editColor" />
+            </div>
+            <div class="edit-actions">
+              <button mat-button (click)="cancelEdit($event)">Cancel</button>
+              <button mat-raised-button color="primary" [disabled]="!editName.trim()" (click)="saveCompany($event, company)">Save</button>
+            </div>
+          </mat-card-content>
+        } @else {
+          <mat-card-content class="card-body">
+            <div class="card-color-bar" [style.background]="company.color || 'var(--mat-sys-outline-variant)'"></div>
+            <div class="card-info">
+              <span class="card-name">{{ company.name }}</span>
+              <span class="card-meta">{{ getProjectCount(company.id) }} projects</span>
+            </div>
+            <div class="card-actions" (click)="$event.stopPropagation()">
+              <button mat-icon-button (click)="startEditCompany(company)">
+                <mat-icon>edit</mat-icon>
+              </button>
+              <button mat-icon-button color="warn" (click)="deleteCompany(company)">
+                <mat-icon>delete</mat-icon>
+              </button>
+            </div>
+          </mat-card-content>
+        }
+      </mat-card>
+    }
+
+    <!-- Add Company card -->
+    @if (addingCompany()) {
+      <mat-card class="entity-card add-card-form">
+        <mat-card-content>
+          <mat-form-field class="edit-field">
+            <mat-label>Company Name</mat-label>
+            <input matInput [(ngModel)]="newCompanyName" (keyup.enter)="saveNewCompany()" />
+          </mat-form-field>
+          <div class="edit-color-row">
+            <label class="color-label">Color</label>
+            <app-color-picker [(ngModel)]="newCompanyColor" />
+          </div>
+          <div class="edit-actions">
+            <button mat-button (click)="addingCompany.set(false)">Cancel</button>
+            <button mat-raised-button color="primary" [disabled]="!newCompanyName.trim()" (click)="saveNewCompany()">Create</button>
+          </div>
+        </mat-card-content>
+      </mat-card>
+    } @else {
+      <mat-card class="entity-card add-card" (click)="startAddCompany()">
+        <mat-card-content class="card-body add-body">
+          <mat-icon>add</mat-icon>
+          <span>Add Company</span>
+        </mat-card-content>
+      </mat-card>
+    }
+    </div>
+    </div>
+  </section>
+
+  <!-- Level 2: Projects -->
+  <section class="drill-section">
+    <h2 class="section-title">
+      @if (selectedCompany(); as company) {
+        Projects in {{ company.name }}
+      } @else {
+        Projects
+      }
+    </h2>
+
+    <div class="section-body">
+    @if (!selectedCompany()) {
+      <p class="empty-message">Please select a company</p>
+    } @else {
+      <div class="card-grid">
+        @for (project of filteredProjects(); track project.id) {
+          <mat-card
+            class="entity-card"
+            [class.selected]="selectedProject()?.id === project.id"
+            (click)="selectProject(project)"
+          >
+            @if (editingProjectId() === project.id) {
+              <mat-card-content (click)="$event.stopPropagation()">
+                <mat-form-field class="edit-field">
+                  <mat-label>Name</mat-label>
+                  <input matInput [(ngModel)]="editName" />
+                </mat-form-field>
+                <div class="edit-color-row">
+                  <label class="color-label">Color</label>
+                  <app-color-picker [(ngModel)]="editColor" />
+                </div>
+                <div class="cap-row">
+                  <mat-form-field class="cap-field">
+                    <mat-label>Daily Cap (hrs)</mat-label>
+                    <input matInput type="number" [(ngModel)]="editDailyCap" />
+                  </mat-form-field>
+                  <mat-form-field class="cap-field">
+                    <mat-label>Weekly Cap (hrs)</mat-label>
+                    <input matInput type="number" [(ngModel)]="editWeeklyCap" />
+                  </mat-form-field>
+                </div>
+                <mat-checkbox [(ngModel)]="editBillable">Billable</mat-checkbox>
+                <!-- Overflow configuration -->
+                <div class="overflow-section">
+                  <label class="overflow-label">Cap Overflow To</label>
+                  <mat-form-field class="edit-field">
+                    <mat-label>Company</mat-label>
+                    <mat-select [(ngModel)]="editOverflowCompanyId" (ngModelChange)="editOverflowProjectId = null; editOverflowTaskId = null">
+                      <mat-option [value]="null">None</mat-option>
+                      @for (c of companies(); track c.id) {
+                        <mat-option [value]="c.id">{{ c.name }}</mat-option>
+                      }
+                    </mat-select>
+                  </mat-form-field>
+                  @if (editOverflowCompanyId) {
+                    <mat-form-field class="edit-field">
+                      <mat-label>Project</mat-label>
+                      <mat-select [(ngModel)]="editOverflowProjectId" (ngModelChange)="editOverflowTaskId = null">
+                        <mat-option [value]="null">None</mat-option>
+                        @for (p of overflowProjectsForCompany(editOverflowCompanyId); track p.id) {
+                          <mat-option [value]="p.id">{{ p.name }}</mat-option>
+                        }
+                      </mat-select>
+                    </mat-form-field>
+                  }
+                  @if (editOverflowProjectId) {
+                    <mat-form-field class="edit-field">
+                      <mat-label>Task</mat-label>
+                      <mat-select [(ngModel)]="editOverflowTaskId">
+                        <mat-option [value]="null">None</mat-option>
+                        @for (t of overflowTasksForProject(editOverflowProjectId); track t.id) {
+                          <mat-option [value]="t.id">{{ t.name }}</mat-option>
+                        }
+                      </mat-select>
+                    </mat-form-field>
+                  }
+                </div>
+                <div class="edit-actions">
+                  <button mat-button (click)="cancelEdit($event)">Cancel</button>
+                  <button mat-raised-button color="primary" [disabled]="!editName.trim()" (click)="saveProject($event, project)">Save</button>
+                </div>
+              </mat-card-content>
+            } @else {
+              <mat-card-content class="card-body">
+                <div class="card-color-bar" [style.background]="project.color || selectedCompany()?.color || 'var(--mat-sys-outline-variant)'"></div>
+                <div class="card-info">
+                  <span class="card-name">{{ project.name }}</span>
+                  <span class="card-meta">
+                    {{ getTaskCount(project.id) }} tasks
+                    @if (project.daily_cap_hrs) {
+                      · {{ project.daily_cap_hrs }}h/day
+                    }
+                    @if (project.weekly_cap_hrs) {
+                      · {{ project.weekly_cap_hrs }}h/wk
+                    }
+                    @if (project.overflow_company_id) {
+                      · overflow → {{ getOverflowLabel(project) }}
+                    }
+                    @if (!project.billable) {
+                      · non-billable
+                    }
+                  </span>
+                </div>
+                <div class="card-actions" (click)="$event.stopPropagation()">
+                  <button mat-icon-button (click)="startEditProject(project)">
+                    <mat-icon>edit</mat-icon>
+                  </button>
+                  <button mat-icon-button color="warn" (click)="deleteProject(project)">
+                    <mat-icon>delete</mat-icon>
+                  </button>
+                </div>
+              </mat-card-content>
+            }
+          </mat-card>
+        }
+
+        <!-- Add Project card -->
+        @if (addingProject()) {
+          <mat-card class="entity-card add-card-form">
+            <mat-card-content>
+              <mat-form-field class="edit-field">
+                <mat-label>Project Name</mat-label>
+                <input matInput [(ngModel)]="newProjectName" (keyup.enter)="saveNewProject()" />
+              </mat-form-field>
+              <div class="edit-color-row">
+                <label class="color-label">Color</label>
+                <app-color-picker [(ngModel)]="newProjectColor" />
+              </div>
+              <div class="cap-row">
+                <mat-form-field class="cap-field">
+                  <mat-label>Daily Cap (hrs)</mat-label>
+                  <input matInput type="number" [(ngModel)]="newProjectDailyCap" />
+                </mat-form-field>
+                <mat-form-field class="cap-field">
+                  <mat-label>Weekly Cap (hrs)</mat-label>
+                  <input matInput type="number" [(ngModel)]="newProjectWeeklyCap" />
+                </mat-form-field>
+              </div>
+              <mat-checkbox [(ngModel)]="newProjectBillable">Billable</mat-checkbox>
+              <!-- Overflow configuration -->
+              <div class="overflow-section">
+                <label class="overflow-label">Cap Overflow To</label>
+                <mat-form-field class="edit-field">
+                  <mat-label>Company</mat-label>
+                  <mat-select [(ngModel)]="newProjectOverflowCompanyId" (ngModelChange)="newProjectOverflowProjectId = null; newProjectOverflowTaskId = null">
+                    <mat-option [value]="null">None</mat-option>
+                    @for (c of companies(); track c.id) {
+                      <mat-option [value]="c.id">{{ c.name }}</mat-option>
+                    }
+                  </mat-select>
+                </mat-form-field>
+                @if (newProjectOverflowCompanyId) {
+                  <mat-form-field class="edit-field">
+                    <mat-label>Project</mat-label>
+                    <mat-select [(ngModel)]="newProjectOverflowProjectId" (ngModelChange)="newProjectOverflowTaskId = null">
+                      <mat-option [value]="null">None</mat-option>
+                      @for (p of overflowProjectsForCompany(newProjectOverflowCompanyId); track p.id) {
+                        <mat-option [value]="p.id">{{ p.name }}</mat-option>
+                      }
+                    </mat-select>
+                  </mat-form-field>
+                }
+                @if (newProjectOverflowProjectId) {
+                  <mat-form-field class="edit-field">
+                    <mat-label>Task</mat-label>
+                    <mat-select [(ngModel)]="newProjectOverflowTaskId">
+                      <mat-option [value]="null">None</mat-option>
+                      @for (t of overflowTasksForProject(newProjectOverflowProjectId); track t.id) {
+                        <mat-option [value]="t.id">{{ t.name }}</mat-option>
+                      }
+                    </mat-select>
+                  </mat-form-field>
+                }
+              </div>
+              <div class="edit-actions">
+                <button mat-button (click)="addingProject.set(false)">Cancel</button>
+                <button mat-raised-button color="primary" [disabled]="!newProjectName.trim()" (click)="saveNewProject()">Create</button>
+              </div>
+            </mat-card-content>
+          </mat-card>
+        } @else {
+          <mat-card class="entity-card add-card" (click)="startAddProject()">
+            <mat-card-content class="card-body add-body">
+              <mat-icon>add</mat-icon>
+              <span>Add Project</span>
+            </mat-card-content>
+          </mat-card>
+        }
+      </div>
+    }
+    </div>
+  </section>
+
+  <!-- Level 3: Tasks -->
+  <section class="drill-section">
+    <h2 class="section-title">
+      @if (selectedProject(); as project) {
+        Tasks in {{ project.name }}
+      } @else {
+        Tasks
+      }
+    </h2>
+
+    <div class="section-body">
+    @if (!selectedProject()) {
+      <p class="empty-message">Please select a project</p>
+    } @else {
+      <div class="card-grid tasks-grid">
+        @for (task of filteredTasks(); track task.id) {
+          <mat-card
+            class="entity-card task-card"
+            [class.selected]="selectedTask()?.id === task.id"
+            (click)="selectTask(task)"
+          >
+            @if (editingTaskId() === task.id) {
+              <mat-card-content (click)="$event.stopPropagation()">
+                <mat-form-field class="edit-field">
+                  <mat-label>Name</mat-label>
+                  <input matInput [(ngModel)]="editName" (keyup.enter)="saveTask($event, task)" />
+                </mat-form-field>
+                <mat-form-field class="edit-field">
+                  <mat-label>Code</mat-label>
+                  <input matInput [(ngModel)]="editCode" placeholder="e.g. ZB-123" />
+                </mat-form-field>
+                <mat-form-field class="edit-field">
+                  <mat-label>URL</mat-label>
+                  <input matInput [(ngModel)]="editUrl" placeholder="https://..." />
+                </mat-form-field>
+                <div class="edit-actions">
+                  <button mat-button (click)="cancelEdit($event)">Cancel</button>
+                  <button mat-raised-button color="primary" [disabled]="!editName.trim()" (click)="saveTask($event, task)">Save</button>
+                </div>
+              </mat-card-content>
+            } @else {
+              <mat-card-content class="card-body">
+                <div class="card-info">
+                  <span class="card-name">{{ task.name }}</span>
+                  @if (task.code) {
+                    <span class="card-meta">
+                      @if (task.url) {
+                        <a [href]="task.url" target="_blank" rel="noopener" class="task-code-link" (click)="$event.stopPropagation()">{{ task.code }}</a>
+                      } @else {
+                        {{ task.code }}
+                      }
+                    </span>
+                  }
+                </div>
+                <div class="card-actions" (click)="$event.stopPropagation()">
+                  <button mat-icon-button (click)="startNewTimerFromTask(task)">
+                    <mat-icon>play_arrow</mat-icon>
+                  </button>
+                  <button mat-icon-button (click)="startEditTask(task)">
+                    <mat-icon>edit</mat-icon>
+                  </button>
+                  <button mat-icon-button color="warn" (click)="deleteTask(task)">
+                    <mat-icon>delete</mat-icon>
+                  </button>
+                </div>
+              </mat-card-content>
+            }
+          </mat-card>
+        }
+
+        <!-- Add Task card -->
+        @if (addingTask()) {
+          <mat-card class="entity-card task-card add-card-form">
+            <mat-card-content>
+              <mat-form-field class="edit-field">
+                <mat-label>Task Name</mat-label>
+                <input matInput [(ngModel)]="newTaskName" (keyup.enter)="saveNewTask()" />
+              </mat-form-field>
+              <mat-form-field class="edit-field">
+                <mat-label>Code</mat-label>
+                <input matInput [(ngModel)]="newTaskCode" placeholder="e.g. ZB-123" />
+              </mat-form-field>
+              <mat-form-field class="edit-field">
+                <mat-label>URL</mat-label>
+                <input matInput [(ngModel)]="newTaskUrl" placeholder="https://..." />
+              </mat-form-field>
+              <div class="edit-actions">
+                <button mat-button (click)="addingTask.set(false)">Cancel</button>
+                <button mat-raised-button color="primary" [disabled]="!newTaskName.trim()" (click)="saveNewTask()">Create</button>
+              </div>
+            </mat-card-content>
+          </mat-card>
+        } @else {
+          <mat-card class="entity-card task-card add-card" (click)="startAddTask()">
+            <mat-card-content class="card-body add-body">
+              <mat-icon>add</mat-icon>
+              <span>Add Task</span>
+            </mat-card-content>
+          </mat-card>
+        }
+      </div>
+    }
+    </div>
+  </section>
+
+  <!-- Level 4: Timer Entries (shown when task selected) -->
+  @if (selectedTask(); as task) {
+    <section class="drill-section">
+      <h2 class="section-title">Timer Entries for {{ task.name }}</h2>
+
+      @if (taskTimers.data.length === 0 && !taskTimerLoading()) {
+        <p class="empty-message">No timer entries yet.</p>
+      } @else {
+        <div class="timer-table-wrap">
+          <table mat-table [dataSource]="taskTimers" matSort class="timer-table">
+
+            <!-- Date Column -->
+            <ng-container matColumnDef="date">
+              <th mat-header-cell *matHeaderCellDef mat-sort-header>Date</th>
+              <td mat-cell *matCellDef="let timer">{{ formatDate(timer.started) }}</td>
+            </ng-container>
+
+            <!-- Start Column -->
+            <ng-container matColumnDef="start">
+              <th mat-header-cell *matHeaderCellDef mat-sort-header="started">Start</th>
+              <td mat-cell *matCellDef="let timer">
+                @if (editingTimerId() === timer.id) {
+                  <input type="datetime-local" [(ngModel)]="editTimerStart" class="time-input" />
+                } @else {
+                  {{ formatTime(timer.started) }}
+                }
+              </td>
+            </ng-container>
+
+            <!-- End Column -->
+            <ng-container matColumnDef="end">
+              <th mat-header-cell *matHeaderCellDef>End</th>
+              <td mat-cell *matCellDef="let timer">
+                @if (editingTimerId() === timer.id) {
+                  <input type="datetime-local" [(ngModel)]="editTimerEnd" class="time-input" />
+                } @else {
+                  {{ timer.ended ? formatTime(timer.ended) : 'running' }}
+                }
+              </td>
+            </ng-container>
+
+            <!-- Duration Column -->
+            <ng-container matColumnDef="duration">
+              <th mat-header-cell *matHeaderCellDef mat-sort-header="duration_ms">Duration</th>
+              <td mat-cell *matCellDef="let timer">
+                @if (editingTimerId() === timer.id) {
+                  {{ getEditDurationMs() | duration }}
+                } @else {
+                  {{ timer.duration_ms | duration }}
+                }
+              </td>
+            </ng-container>
+
+            <!-- Code Column -->
+            <ng-container matColumnDef="code">
+              <th mat-header-cell *matHeaderCellDef>Code</th>
+              <td mat-cell *matCellDef="let timer">
+                @if (timer.task_code) {
+                  @if (timer.task_url) {
+                    <a [href]="timer.task_url" target="_blank" rel="noopener" class="task-code-link">{{ timer.task_code }}</a>
+                  } @else {
+                    {{ timer.task_code }}
+                  }
+                }
+              </td>
+            </ng-container>
+
+            <!-- Notes Column -->
+            <ng-container matColumnDef="notes">
+              <th mat-header-cell *matHeaderCellDef>Notes</th>
+              <td mat-cell *matCellDef="let timer">
+                @if (editingTimerId() === timer.id) {
+                  <input matInput [(ngModel)]="editTimerNotes" class="notes-input" placeholder="Notes..." />
+                } @else {
+                  <span class="notes-cell">{{ timer.notes }}</span>
+                }
+              </td>
+            </ng-container>
+
+            <!-- Actions Column -->
+            <ng-container matColumnDef="actions">
+              <th mat-header-cell *matHeaderCellDef></th>
+              <td mat-cell *matCellDef="let timer">
+                @if (editingTimerId() === timer.id) {
+                  <button mat-icon-button (click)="cancelEditTimer()">
+                    <mat-icon>close</mat-icon>
+                  </button>
+                  <button mat-icon-button color="primary" (click)="saveTimer(timer)">
+                    <mat-icon>check</mat-icon>
+                  </button>
+                } @else {
+                  <button mat-icon-button (click)="startEditTimer(timer)">
+                    <mat-icon>edit</mat-icon>
+                  </button>
+                  <button mat-icon-button color="warn" (click)="deleteTimer(timer)">
+                    <mat-icon>delete</mat-icon>
+                  </button>
+                }
+              </td>
+            </ng-container>
+
+            <tr mat-header-row *matHeaderRowDef="timerColumns"></tr>
+            <tr mat-row *matRowDef="let row; columns: timerColumns;"></tr>
+          </table>
+        </div>
+
+        @if (taskTimerHasMore()) {
+          <div class="load-more">
+            <button mat-button (click)="loadMoreTimers()" [disabled]="taskTimerLoading()">
+              @if (taskTimerLoading()) {
+                Loading...
+              } @else {
+                Load More
+              }
+            </button>
+          </div>
+        }
+      }
+
+      @if (taskTimerLoading() && taskTimers.data.length === 0) {
+        <p class="empty-message">Loading...</p>
+      }
+    </section>
+  }
+
+  }
+</div>

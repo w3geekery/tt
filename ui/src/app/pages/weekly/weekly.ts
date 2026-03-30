@@ -1,273 +1,648 @@
-import { Component, OnInit, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { Component, OnInit, OnDestroy, signal, computed, PLATFORM_ID, inject } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatCardModule } from '@angular/material/card';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { MatSelectModule } from '@angular/material/select';
 import { MatChipsModule } from '@angular/material/chips';
-import { ApiService } from '../../services/api.service';
-import { SnackbarService } from '../../services/snackbar.service';
-import { PreferencesService } from '../../services/preferences.service';
-import { CapBarComponent } from '../../components/cap-bar/cap-bar';
+import { MatMenuModule } from '@angular/material/menu';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { TimerCardComponent } from '../../components/timer-card';
+import { BreadcrumbNavComponent, BreadcrumbItem } from '../../components/breadcrumb-nav';
 import { DurationPipe } from '../../pipes/duration.pipe';
-import type { Timer, CapStatus } from '../../models/types';
+import { SkeletonComponent } from '../../components/skeleton';
+import { TimerService } from '../../services/timer.service';
+import { ApiService } from '../../services/api.service';
+import { AuthService } from '../../services/auth.service';
+import { NotificationTimelineComponent } from '../../components/notification-timeline';
+import { NotificationsService } from '../../services/notifications.service';
+import { SseService } from '../../services/sse.service';
+import { CapStatusService } from '../../services/cap-status.service';
+import { CapProgressBarComponent } from '../../components/cap-progress-bar';
+import { PreferencesService } from '../../services/preferences.service';
+import { Timer, TimerTemplate, Company, Project, Task, Notification, UserSettings, CapStatus, ProjectCapStatus } from '../../models';
 
 interface DayColumn {
-  date: Date;
-  dateStr: string;
-  label: string;
-  dayName: string;
+  date: string;       // YYYY-MM-DD
+  label: string;      // "Mon 2/24"
+  dayName: string;    // "Monday"
   timers: Timer[];
   totalMs: number;
-  isToday: boolean;
 }
 
 @Component({
   selector: 'app-weekly',
-  standalone: true,
   imports: [
-    CommonModule, RouterModule, MatButtonModule, MatIconModule, MatCardModule,
-    MatChipsModule, CapBarComponent, DurationPipe,
+    FormsModule,
+    MatButtonModule,
+    MatIconModule,
+    MatCheckboxModule,
+    MatCardModule,
+    MatFormFieldModule,
+    MatInputModule,
+    MatSelectModule,
+    MatChipsModule,
+    MatMenuModule,
+    MatSnackBarModule,
+    TimerCardComponent,
+    BreadcrumbNavComponent,
+    DurationPipe,
+    RouterLink,
+    SkeletonComponent,
+    NotificationTimelineComponent,
+    CapProgressBarComponent,
   ],
-  template: `
-    <div class="header">
-      <button mat-icon-button (click)="prevWeek()"><mat-icon>chevron_left</mat-icon></button>
-      <h2>{{ weekLabel }}</h2>
-      <button mat-icon-button (click)="nextWeek()"><mat-icon>chevron_right</mat-icon></button>
-      @if (!isCurrentWeek) {
-        <button mat-stroked-button (click)="goThisWeek()">This Week</button>
-      }
-      <span class="total">{{ grandTotalMs | duration:'decimal' }}</span>
-    </div>
-
-    <!-- Weekly caps -->
-    @if (caps.length) {
-      <div class="caps">
-        @for (cap of caps; track cap.project_id) {
-          @if (cap.weekly) {
-            <app-cap-bar
-              [label]="cap.company_name + ' / ' + cap.project_name"
-              [capHrs]="cap.weekly.cap_hrs"
-              [usedHrs]="cap.weekly.used_hrs"
-              [pct]="cap.weekly.pct"
-            />
-          }
-        }
-      </div>
-    }
-
-    <!-- Company filter chips -->
-    @if (companyChips.length > 1) {
-      <div class="filter-chips">
-        @for (chip of companyChips; track chip.id) {
-          <mat-chip-option [selected]="chip.selected" (selectionChange)="chip.selected = !chip.selected">
-            {{ chip.name }}
-          </mat-chip-option>
-        }
-      </div>
-    }
-
-    <!-- Day columns -->
-    <div class="week-grid">
-      @for (day of days; track day.dateStr) {
-        <div class="day-column" [class.today]="day.isToday">
-          <div class="day-header">
-            <span class="day-name">{{ day.dayName }}</span>
-            <a class="day-date" [routerLink]="['/daily']" [queryParams]="{date: day.dateStr}">
-              {{ day.date | date:'MMM d' }}
-            </a>
-            <span class="day-total">{{ day.totalMs | duration:'decimal' }}</span>
-          </div>
-          <div class="day-timers">
-            @for (timer of getFilteredTimers(day); track timer.id) {
-              <mat-card class="mini-timer" [class]="'state-' + timer.state">
-                <div class="mini-slug">{{ timer.slug }}</div>
-                <div class="mini-meta">
-                  {{ companyMap.get(timer.company_id) ?? '' }}
-                  @if (timer.project_id) { / {{ projectMap.get(timer.project_id) ?? '' }} }
-                </div>
-                <div class="mini-duration">{{ timer.duration_ms | duration:'hm' }}</div>
-                @if (timer.notes) {
-                  <div class="mini-notes">{{ timer.notes }}</div>
-                }
-              </mat-card>
-            }
-            @if (getFilteredTimers(day).length === 0) {
-              <div class="empty-day">—</div>
-            }
-          </div>
-        </div>
-      }
-    </div>
-  `,
-  styles: `
-    .header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-    h2 { margin: 0; min-width: 220px; text-align: center; }
-    .total {
-      margin-left: auto;
-      font-size: 1.2rem;
-      font-weight: 500;
-      color: var(--mat-sys-primary);
-    }
-    .caps { margin: 8px 0 12px; }
-    .filter-chips { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-    .week-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 8px;
-    }
-    .day-column {
-      border: 1px solid var(--mat-sys-outline-variant);
-      border-radius: 8px;
-      padding: 8px;
-      min-height: 120px;
-    }
-    .day-column.today {
-      border-color: var(--mat-sys-primary);
-      border-width: 2px;
-    }
-    .day-header {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      margin-bottom: 8px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid var(--mat-sys-outline-variant);
-    }
-    .day-name { font-weight: 600; font-size: 0.85rem; }
-    .day-date {
-      color: var(--mat-sys-primary);
-      text-decoration: none;
-      font-size: 0.85rem;
-      &:hover { text-decoration: underline; }
-    }
-    .day-total {
-      font-size: 0.8rem;
-      color: var(--mat-sys-on-surface-variant);
-      font-variant-numeric: tabular-nums;
-    }
-    .mini-timer {
-      padding: 6px 8px;
-      margin-bottom: 4px;
-      font-size: 0.8rem;
-    }
-    .mini-timer.state-running { border-left: 3px solid var(--mat-sys-primary); }
-    .mini-timer.state-paused { border-left: 3px solid var(--mat-sys-tertiary); }
-    .mini-slug { font-weight: 500; }
-    .mini-meta { color: var(--mat-sys-on-surface-variant); font-size: 0.75rem; }
-    .mini-duration { font-variant-numeric: tabular-nums; }
-    .mini-notes {
-      color: var(--mat-sys-on-surface-variant);
-      font-size: 0.75rem;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .empty-day {
-      text-align: center;
-      color: var(--mat-sys-on-surface-variant);
-      padding: 16px 0;
-    }
-  `,
+  templateUrl: './weekly.html',
+  styleUrl: './weekly.scss',
 })
-export class WeeklyComponent implements OnInit {
-  private api = inject(ApiService);
-  private snack = inject(SnackbarService);
+export class WeeklyComponent implements OnInit, OnDestroy {
+  timers = signal<Timer[]>([]);
+  selectedWeekStart = signal<Date>(this.getMonday(new Date()));
+  loading = signal(true);
+  expandedTimerId = signal<string | null>(null);
+  selectedCompanies = signal<Set<string>>(new Set());
+
+  // New timer form state
+  newTimerForDate = signal<string | null>(null); // YYYY-MM-DD of column with open form
+  showFullForm = signal(false);
+  templates = signal<TimerTemplate[]>([]);
+  companies = signal<Company[]>([]);
+  projects = signal<Project[]>([]);
+  tasks = signal<Task[]>([]);
+  newCompanyId = signal<string>('');
+  newProjectId = signal<string | null>(null);
+  newTaskId: string | null = null;
+  newNotes = '';
+  scheduleStart = '';
+  scheduleEnd = '';
+
+  // Recurring timer form state
+  newRecurring = signal(false);
+  newRecurringPattern = signal<'weekdays' | 'weekly'>('weekdays');
+  newRecurringWeekday = signal<number>(1); // Monday default
+  newRecurringStartTime = signal('09:00');
+
+  // Notifications
+  notificationsByDay = signal<Map<string, Notification[]>>(new Map());
+  timelineSettings = signal<UserSettings>({ timeline_start_hour: 5, timeline_end_hour: 19, notify_on_cap: true });
+
+  // Cap status
+  capStatus = signal<CapStatus | null>(null);
+  weeklyCaps = computed(() => (this.capStatus()?.projects ?? []).filter((p) => p.weekly));
+  dailyCapsByDate = signal<Map<string, ProjectCapStatus[]>>(new Map());
+
+  // Weekly ZB task links
+  weeklyZbTasks = signal<Array<{ company: string; taskId: string; taskCode?: string }>>([]);
+
+  // Navigation context
+  fromMonthly = signal(false);
+
+  auth = inject(AuthService);
+  private platformId = inject(PLATFORM_ID);
+  private snackBar = inject(MatSnackBar);
+  private notificationsService = inject(NotificationsService);
+  private sse = inject(SseService);
+  private capStatusService = inject(CapStatusService);
   prefs = inject(PreferencesService);
+  private sseSub: { unsubscribe(): void } | null = null;
 
-  weekOffset = 0;
-  days: DayColumn[] = [];
-  caps: CapStatus[] = [];
-  companyMap = new Map<string, string>();
-  projectMap = new Map<string, string>();
-  companyChips: Array<{ id: string; name: string; selected: boolean }> = [];
+  // Monday of the selected week
+  weekStart = computed(() => this.selectedWeekStart());
 
-  get weekLabel(): string {
-    if (!this.days.length) return '';
-    const start = this.days[0].date;
-    const end = this.days[this.days.length - 1].date;
-    return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-  }
+  // Sunday before Monday (start of calendar week)
+  weekSunday = computed(() => {
+    const sun = new Date(this.selectedWeekStart());
+    sun.setDate(sun.getDate() - 1);
+    return sun;
+  });
 
-  get isCurrentWeek(): boolean {
-    return this.weekOffset === 0;
-  }
+  // Saturday after Friday (end of calendar week)
+  weekEnd = computed(() => {
+    const end = new Date(this.selectedWeekStart());
+    end.setDate(end.getDate() + 5); // Saturday
+    return end;
+  });
 
-  get grandTotalMs(): number {
-    return this.days.reduce((sum, d) => sum + d.totalMs, 0);
-  }
+  uniqueCompanyNames = computed(() => {
+    const names = new Set(this.timers().map((t) => t.company_name ?? 'Unknown'));
+    return [...names].sort();
+  });
 
-  ngOnInit(): void {
-    this.api.getCompanies().subscribe(list => {
-      this.companyMap = new Map(list.map(c => [c.id, c.name]));
-      this.api.getProjects().subscribe(projects => {
-        this.projectMap = new Map(projects.map(p => [p.id, p.name]));
-        this.loadWeek();
+  filteredTimers = computed(() => {
+    const selected = this.selectedCompanies();
+    if (selected.size === 0) return this.timers();
+    return this.timers().filter((t) => selected.has(t.company_name ?? 'Unknown'));
+  });
+
+  dayColumns = computed<DayColumn[]>(() => {
+    const timers = this.filteredTimers();
+    const monday = this.selectedWeekStart();
+    const showWeekend = this.prefs.showWeekend();
+    const columns: DayColumn[] = [];
+
+    const makeDayColumn = (d: Date): DayColumn => {
+      const dateStr = this.formatDate(d);
+      const dayTimers = timers.filter((t) => {
+        const effective = t.started || t.start_at;
+        if (!effective) return false;
+        const timerDate = new Date(effective).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+        return timerDate === dateStr;
       });
-    });
-    this.api.getCapStatus().subscribe(list => this.caps = list);
-  }
+      const totalMs = dayTimers.reduce((sum, t) => {
+        if (!t.started) return sum; // skip scheduled (unstarted) timers
+        if (t.ended || t.state === 'paused') return sum + Number(t.duration_ms ?? 0);
+        if (t.state === 'running') return sum + (Date.now() - new Date(t.started).getTime());
+        return sum + Number(t.duration_ms ?? 0);
+      }, 0);
+      return {
+        date: dateStr,
+        label: d.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', timeZone: 'America/Los_Angeles' }),
+        dayName: d.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/Los_Angeles' }),
+        timers: dayTimers,
+        totalMs,
+      };
+    };
 
-  prevWeek(): void { this.weekOffset--; this.loadWeek(); }
-  nextWeek(): void { this.weekOffset++; this.loadWeek(); }
-  goThisWeek(): void { this.weekOffset = 0; this.loadWeek(); }
-
-  getFilteredTimers(day: DayColumn): Timer[] {
-    const selected = this.companyChips.filter(c => c.selected).map(c => c.id);
-    if (selected.length === 0 || selected.length === this.companyChips.length) return day.timers;
-    return day.timers.filter(t => selected.includes(t.company_id));
-  }
-
-  private loadWeek(): void {
-    const dates = this.getWeekDates();
-    const todayStr = new Date().toISOString().slice(0, 10);
-
-    this.api.getTimers().subscribe(allTimers => {
-      this.days = dates.map(d => {
-        const dateStr = d.toISOString().slice(0, 10);
-        const timers = allTimers.filter(t => t.started?.startsWith(dateStr));
-        return {
-          date: d,
-          dateStr,
-          label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          dayName: d.toLocaleDateString('en-US', { weekday: 'short' }),
-          timers,
-          totalMs: timers.reduce((sum, t) => sum + (t.duration_ms ?? 0), 0),
-          isToday: dateStr === todayStr,
-        };
-      });
-
-      const allWeekTimers = this.days.flatMap(d => d.timers);
-      const ids = new Set(allWeekTimers.map(t => t.company_id));
-      this.companyChips = [...ids].map(id => ({
-        id,
-        name: this.companyMap.get(id) ?? id,
-        selected: this.companyChips.find(c => c.id === id)?.selected ?? true,
-      }));
-    });
-  }
-
-  private getWeekDates(): Date[] {
-    const now = new Date();
-    const start = new Date(now);
-    start.setDate(now.getDate() - now.getDay() + (this.weekOffset * 7));
-    start.setHours(12, 0, 0, 0); // Avoid DST issues
-
-    const showWeekends = this.prefs.showWeekends();
-    const dayCount = showWeekends ? 7 : 5;
-    const startDay = showWeekends ? 0 : 1; // Sun or Mon
-
-    const dates: Date[] = [];
-    for (let i = 0; i < dayCount; i++) {
-      const d = new Date(start);
-      d.setDate(start.getDate() + startDay + i);
-      dates.push(d);
+    // Sunday first (if showing weekends)
+    if (showWeekend) {
+      columns.push(makeDayColumn(this.weekSunday()));
     }
-    return dates;
+
+    // Monday through Friday
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(monday);
+      d.setDate(d.getDate() + i);
+      columns.push(makeDayColumn(d));
+    }
+
+    // Saturday last (if showing weekends)
+    if (showWeekend) {
+      columns.push(makeDayColumn(this.weekEnd()));
+    }
+
+    return columns;
+  });
+
+  weeklyTotal = computed(() => {
+    return this.dayColumns().reduce((sum, col) => sum + col.totalMs, 0);
+  });
+
+  weeklyCompanyTotals = computed(() => {
+    const map = new Map<string, number>();
+    for (const col of this.dayColumns()) {
+      for (const timer of col.timers) {
+        if (!timer.started) continue; // skip scheduled (unstarted) timers
+        const name = timer.company_name ?? 'Unknown';
+        const ms = (timer.ended || timer.state === 'paused')
+          ? Number(timer.duration_ms ?? 0)
+          : Date.now() - new Date(timer.started).getTime();
+        map.set(name, (map.get(name) ?? 0) + ms);
+      }
+    }
+    return [...map.entries()]
+      .map(([name, ms]) => ({ name, ms }))
+      .sort((a, b) => b.ms - a.ms);
+  });
+
+  weekLabel = computed(() => {
+    const sun = this.weekSunday();
+    const sat = this.weekEnd();
+    const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', timeZone: 'America/Los_Angeles' };
+    const startStr = sun.toLocaleDateString('en-US', opts);
+    const endStr = sat.toLocaleDateString('en-US', { ...opts, year: 'numeric' });
+    return `${startStr} – ${endStr}`;
+  });
+
+  isThisWeek = computed(() => {
+    return this.formatDate(this.selectedWeekStart()) === this.formatDate(this.getMonday(new Date()));
+  });
+
+  filteredProjects = computed(() => {
+    const cid = this.newCompanyId();
+    return cid ? this.projects().filter((p) => p.company_id === cid) : [];
+  });
+
+  filteredTasks = computed(() => {
+    const pid = this.newProjectId();
+    return pid ? this.tasks().filter((t) => t.project_id === pid) : [];
+  });
+
+  todayStr = computed(() => this.formatDate(new Date()));
+
+  breadcrumbs = computed<BreadcrumbItem[]>(() => {
+    const items: BreadcrumbItem[] = [{ label: 'Home', url: '/' }];
+    if (this.fromMonthly()) {
+      const mon = this.selectedWeekStart();
+      items.push({ label: 'Monthly', url: `/monthly/${mon.getFullYear()}/${mon.getMonth() + 1}` });
+    }
+    items.push({ label: this.weekLabel(), url: null });
+    return items;
+  });
+
+  constructor(
+    private timerService: TimerService,
+    private api: ApiService,
+    private route: ActivatedRoute,
+    private router: Router,
+  ) {}
+
+  ngOnInit() {
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    this.sse.connect();
+    this.sseSub = this.sse.timerEvents$.subscribe(() => {
+      this.loadTimers();
+      this.loadCapStatus();
+    });
+
+    this.route.queryParamMap.subscribe((qp) => {
+      this.fromMonthly.set(qp.get('from') === 'monthly');
+    });
+    this.route.paramMap.subscribe((params) => {
+      const dateParam = params.get('date');
+      if (dateParam) {
+        this.selectedWeekStart.set(this.getMonday(new Date(dateParam + 'T00:00:00')));
+      }
+      this.waitForAuthThenLoad();
+    });
+  }
+
+  ngOnDestroy() {
+    this.sseSub?.unsubscribe();
+  }
+
+  private waitForAuthThenLoad() {
+    const check = setInterval(() => {
+      if (!this.auth.loading()) {
+        clearInterval(check);
+        if (this.auth.user()) {
+          // Start any overdue scheduled timers first
+          this.timerService.startScheduled().subscribe({
+            next: (started) => {
+              if (started.length > 0) {
+                this.snackBar.open(`${started.length} scheduled timer(s) started`, 'OK', { duration: 3000 });
+              }
+              this.loadTimers();
+            },
+            error: () => this.loadTimers(),
+          });
+          this.loadEntities();
+          this.loadWeekNotifications();
+          this.loadTimelineSettings();
+          this.loadCapStatus();
+        } else {
+          this.loading.set(false);
+        }
+      }
+    }, 50);
+  }
+
+  private loadEntities() {
+    this.api.getCompanies().subscribe((c) => this.companies.set(c));
+    this.api.getProjects().subscribe((p) => this.projects.set(p));
+    this.api.getTasks().subscribe((t) => this.tasks.set(t));
+    this.timerService.getTemplates().subscribe((t) => this.templates.set(t));
+  }
+
+  loadTimers() {
+    this.loading.set(true);
+    // Always fetch Sun-Sat range so toggling weekend doesn't need a refetch
+    const from = this.formatDate(this.weekSunday());
+    const sat = this.weekEnd();
+    const to = this.formatDate(sat);
+
+    // Materialize recurring timers first, then load all timers
+    this.timerService.materialize(from, to).subscribe({
+      next: () => {
+        this.timerService.getByRange(from, to).subscribe((t) => {
+          this.timers.set(t);
+          this.loading.set(false);
+        });
+      },
+      error: () => {
+        // Fall back to loading without materialization
+        this.timerService.getByRange(from, to).subscribe((t) => {
+          this.timers.set(t);
+          this.loading.set(false);
+        });
+      },
+    });
+
+    // Fetch weekly ZB task links for this week
+    const weekStartStr = this.formatDate(this.selectedWeekStart());
+    this.api.getWeeklyTasks(weekStartStr).subscribe({
+      next: (tasks) => this.weeklyZbTasks.set(tasks),
+      error: () => this.weeklyZbTasks.set([]),
+    });
+  }
+
+  prevWeek() {
+    const d = new Date(this.selectedWeekStart());
+    d.setDate(d.getDate() - 7);
+    this.navigateToWeek(d);
+  }
+
+  nextWeek() {
+    const d = new Date(this.selectedWeekStart());
+    d.setDate(d.getDate() + 7);
+    this.navigateToWeek(d);
+  }
+
+  thisWeek() {
+    this.navigateToWeek(this.getMonday(new Date()));
+  }
+
+  private navigateToWeek(monday: Date) {
+    this.selectedWeekStart.set(monday);
+    this.router.navigate(['/weekly', this.formatDate(monday)]);
+    this.loadTimers();
+    this.loadWeekNotifications();
+    this.loadCapStatus();
+  }
+
+  loadWeekNotifications() {
+    const from = this.formatDate(this.weekSunday());
+    const to = this.formatDate(this.weekEnd());
+    this.notificationsService.list({ from, to }).subscribe((notifs) => {
+      const byDay = new Map<string, Notification[]>();
+      for (const notif of notifs) {
+        const dayStr = new Date(notif.trigger_at).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+        if (!byDay.has(dayStr)) byDay.set(dayStr, []);
+        byDay.get(dayStr)!.push(notif);
+      }
+      this.notificationsByDay.set(byDay);
+    });
+  }
+
+  loadTimelineSettings() {
+    this.notificationsService.getSettings().subscribe((s) => this.timelineSettings.set(s));
+  }
+
+  loadCapStatus() {
+    const monday = this.selectedWeekStart();
+    const days = this.prefs.showWeekend() ? 7 : 5;
+    const dailyMap = new Map<string, ProjectCapStatus[]>();
+
+    // Fetch Monday for weekly caps
+    const mondayStr = this.formatDate(monday);
+    this.capStatusService.getCapStatus(mondayStr).subscribe((status) => {
+      this.capStatus.set(status);
+    });
+
+    // Fetch each day for daily caps
+    for (let i = 0; i < days; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const dateStr = this.formatDate(d);
+      this.capStatusService.getCapStatus(dateStr).subscribe((status) => {
+        const caps = (status.projects ?? []).filter((p) => p.daily);
+        dailyMap.set(dateStr, caps);
+        this.dailyCapsByDate.set(new Map(dailyMap));
+      });
+    }
+  }
+
+  getDailyCapsForDay(date: string): ProjectCapStatus[] {
+    return this.dailyCapsByDate().get(date) ?? [];
+  }
+
+  getDailyCapTooltip(cap: ProjectCapStatus): string {
+    if (!cap.daily) return '';
+    return `${cap.company} | ${cap.project} ${cap.daily.cap}hr daily cap`;
+  }
+
+  getNotificationsForDay(date: string): Notification[] {
+    return this.notificationsByDay().get(date) ?? [];
+  }
+
+  onAddNotification(date: string, event: { time: string; title: string }) {
+    this.notificationsService.create({
+      trigger_at: event.time,
+      type: 'manual',
+      title: event.title,
+    }).subscribe(() => {
+      this.loadWeekNotifications();
+      this.snackBar.open('Notification scheduled', 'OK', { duration: 2000 });
+    });
+  }
+
+  copyZbTaskLink(task: { taskId: string; taskCode?: string; company: string }) {
+    const url = `https://app.zerobias.com/resource/${task.taskId}`;
+    navigator.clipboard.writeText(url);
+    this.snackBar.open(`Copied ${task.taskCode} link`, '', { duration: 2000 });
+  }
+
+  openZbTask(task: { taskId: string }) {
+    window.open(`https://app.zerobias.com/resource/${task.taskId}`, '_blank');
+  }
+
+  toggleCompanyFilter(name: string) {
+    const current = new Set(this.selectedCompanies());
+    if (current.has(name)) {
+      current.delete(name);
+    } else {
+      current.add(name);
+    }
+    this.selectedCompanies.set(current);
+  }
+
+  toggleExpand(id: string) {
+    this.expandedTimerId.set(this.expandedTimerId() === id ? null : id);
+  }
+
+  stopTimer(id: string) {
+    this.timerService.stop(id).subscribe(() => this.loadTimers());
+  }
+
+  pauseTimer(id: string) {
+    this.timerService.pause(id).subscribe(() => this.loadTimers());
+  }
+
+  resumeTimer(id: string) {
+    this.timerService.resume(id).subscribe(() => this.loadTimers());
+  }
+
+  scheduleStopTimer(event: { id: string; ended: string }) {
+    this.timerService.update(event.id, { ended: event.ended }).subscribe(() => this.loadTimers());
+  }
+
+  updateTimerTime(event: { id: string; started?: string; ended?: string; start_at?: string }) {
+    const data: Record<string, string> = {};
+    if (event.started) data['started'] = event.started;
+    if (event.ended) data['ended'] = event.ended;
+    if (event.start_at) data['start_at'] = event.start_at;
+    this.timerService.update(event.id, data).subscribe(() => this.loadTimers());
+  }
+
+  deleteTimer(id: string) {
+    const timer = this.timers().find((t) => t.id === id);
+    if (timer?.recurring_id) {
+      // Recurring timer: skip this occurrence (don't delete the rule)
+      const action = confirm(
+        'This is a recurring timer. Click OK to skip this occurrence, or Cancel to keep it.'
+      );
+      if (!action) return;
+      const timerDate = timer.started || timer.start_at;
+      if (timerDate) {
+        const dateStr = new Date(timerDate).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+        this.timerService.skipOccurrence(timer.recurring_id, dateStr).subscribe(() => {
+          this.timerService.delete(id).subscribe(() => this.loadTimers());
+        });
+      }
+    } else {
+      if (!confirm('Delete this timer?')) return;
+      this.timerService.delete(id).subscribe(() => this.loadTimers());
+    }
+  }
+
+  updateTimer(event: { id: string; notes: string; project_id?: string | null; task_id?: string | null; notify_on_switch?: boolean }) {
+    const data: Record<string, any> = { notes: event.notes };
+    if (event.project_id !== undefined) data['project_id'] = event.project_id;
+    if (event.task_id !== undefined) data['task_id'] = event.task_id;
+    if (event.notify_on_switch !== undefined) data['notify_on_switch'] = event.notify_on_switch;
+    this.timerService.update(event.id, data).subscribe(() => this.loadTimers());
+  }
+
+  // --- New timer form ---
+
+  toggleNewTimerForm(date: string) {
+    if (this.newTimerForDate() === date) {
+      this.newTimerForDate.set(null);
+      this.showFullForm.set(false);
+      return;
+    }
+    this.resetNewForm();
+    this.newTimerForDate.set(date);
+    // Default to schedule mode for non-today
+    if (date !== this.todayStr()) {
+      this.scheduleStart = `${date}T09:00`;
+    }
+  }
+
+  onNewCompanyChange(id: string) {
+    this.newCompanyId.set(id);
+    this.newProjectId.set(null);
+    this.newTaskId = null;
+  }
+
+  onNewProjectChange(id: string | null) {
+    this.newProjectId.set(id);
+    this.newTaskId = null;
+  }
+
+  startFromTemplate(tpl: TimerTemplate) {
+    const date = this.newTimerForDate();
+    if (!date) return;
+
+    if (date === this.todayStr()) {
+      // Today: start immediately
+      this.timerService.create({
+        company_id: tpl.company_id,
+        project_id: tpl.project_id,
+        task_id: tpl.task_id,
+      }).subscribe(() => {
+        this.loadTimers();
+        this.newTimerForDate.set(null);
+        this.snackBar.open('Timer started', 'OK', { duration: 2000 });
+      });
+    } else {
+      // Non-today: populate form and show time picker
+      this.newCompanyId.set(tpl.company_id);
+      this.newProjectId.set(tpl.project_id);
+      this.newTaskId = tpl.task_id;
+      if (!this.scheduleStart) {
+        this.scheduleStart = `${date}T09:00`;
+      }
+      this.showFullForm.set(true);
+    }
+  }
+
+  startNewTimer() {
+    const date = this.newTimerForDate();
+    if (!date) return;
+
+    // If recurring, create a recurring rule instead
+    if (this.newRecurring()) {
+      this.timerService.createRecurring({
+        company_id: this.newCompanyId(),
+        project_id: this.newProjectId(),
+        task_id: this.newTaskId,
+        pattern: this.newRecurringPattern(),
+        weekday: this.newRecurringPattern() === 'weekly' ? this.newRecurringWeekday() : null,
+        start_time: this.newRecurringStartTime(),
+        start_date: date,
+        notes: this.newNotes || null,
+      } as any).subscribe(() => {
+        this.loadTimers();
+        this.newTimerForDate.set(null);
+        this.showFullForm.set(false);
+        this.resetNewForm();
+        this.snackBar.open('Recurring timer created', 'OK', { duration: 2000 });
+      });
+      return;
+    }
+
+    const data: Record<string, unknown> = {
+      company_id: this.newCompanyId(),
+      project_id: this.newProjectId(),
+      task_id: this.newTaskId,
+      notes: this.newNotes || null,
+    };
+    if (date !== this.todayStr()) {
+      // Non-today: create a scheduled timer using start_at
+      // datetime-local value is already in local time, convert to ISO with timezone
+      const localDt = this.scheduleStart || `${date}T09:00`;
+      data['start_at'] = new Date(localDt).toISOString();
+    }
+    const isScheduled = date !== this.todayStr();
+    this.timerService.create(data as Partial<Timer>).subscribe(() => {
+      this.loadTimers();
+      this.newTimerForDate.set(null);
+      this.showFullForm.set(false);
+      this.resetNewForm();
+      this.snackBar.open(isScheduled ? 'Timer scheduled' : 'Timer started', 'OK', { duration: 2000 });
+    });
+  }
+
+  private resetNewForm() {
+    this.newCompanyId.set('');
+    this.newProjectId.set(null);
+    this.newTaskId = null;
+    this.newNotes = '';
+    this.scheduleStart = '';
+    this.showFullForm.set(false);
+    this.newRecurring.set(false);
+    this.newRecurringPattern.set('weekdays');
+    this.newRecurringWeekday.set(1);
+    this.newRecurringStartTime.set('09:00');
+  }
+
+  openRecurringFromTimer(event: { company_id: string; project_id: string | null; task_id: string | null; start_time: string }, date: string) {
+    // Pre-populate the new timer form with recurring enabled
+    this.resetNewForm();
+    this.newTimerForDate.set(date);
+    this.showFullForm.set(true);
+    this.newCompanyId.set(event.company_id);
+    this.newProjectId.set(event.project_id);
+    this.newTaskId = event.task_id;
+    this.newRecurring.set(true);
+    this.newRecurringStartTime.set(event.start_time);
+  }
+
+  formatDate(date: Date): string {
+    return date.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+  }
+
+  private getMonday(date: Date): Date {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+    d.setDate(diff);
+    return d;
   }
 }

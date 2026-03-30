@@ -1,0 +1,353 @@
+.weekly-page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.skeleton-weekly {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 0;
+}
+
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
+
+.skeleton-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.back-link {
+  margin-bottom: 8px;
+}
+
+.login-prompt {
+  text-align: center;
+  padding: 64px 24px;
+
+  p {
+    margin: 16px 0 24px;
+    color: var(--mat-sys-on-surface-variant);
+  }
+}
+
+.week-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.week-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.week-display {
+  flex: 1;
+  text-align: center;
+
+  h1 {
+    font-size: 1.25rem;
+    margin: 0;
+  }
+}
+
+.week-totals-panel {
+  background: var(--mat-sys-surface-container);
+  border-radius: 8px;
+  padding: 12px 16px;
+  min-width: 200px;
+  flex-shrink: 0;
+}
+
+.week-totals-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+}
+
+.week-totals-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.week-totals-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.week-totals-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+}
+
+.week-totals-company {
+  font-size: 0.8rem;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.week-totals-hours {
+  font-size: 0.8rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.week-caps-panel {
+  background: var(--mat-sys-surface-container);
+  border-radius: 8px;
+  padding: 12px 16px;
+  min-width: 180px;
+  flex-shrink: 0;
+}
+
+.week-caps-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+}
+
+.week-caps-item {
+  margin-bottom: 6px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.weekly-cap-label {
+  font-size: 0.7rem;
+  color: var(--mat-sys-on-surface-variant);
+  display: block;
+  margin-bottom: 2px;
+}
+
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 12px;
+}
+
+.company-filter-chips {
+  margin-bottom: 0;
+}
+
+.zb-task-links {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.zb-task-split {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 16px;
+  border: 1px solid var(--mat-sys-outline-variant);
+  overflow: hidden;
+  height: 28px;
+}
+
+.zb-task-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--mat-sys-primary);
+  padding: 0 8px 0 10px;
+  white-space: nowrap;
+}
+
+.zb-task-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-left: 1px solid var(--mat-sys-outline-variant);
+  background: transparent;
+  color: var(--mat-sys-primary);
+  cursor: pointer;
+  padding: 0 2px;
+  height: 100%;
+  transition: background 0.15s;
+
+  mat-icon { font-size: 18px; width: 18px; height: 18px; }
+
+  &:hover { background: var(--mat-sys-primary-container); }
+}
+
+.day-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+
+  &.show-weekend {
+    grid-template-columns: repeat(7, 1fr);
+  }
+}
+
+.day-column {
+  min-width: 0;
+}
+
+.day-cap-lane {
+  margin-bottom: 4px;
+}
+
+.day-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 4px;
+  border-bottom: 2px solid var(--mat-sys-outline-variant);
+  margin-bottom: 8px;
+  gap: 4px;
+}
+
+.day-add-btn {
+  --mdc-icon-button-state-layer-size: 28px;
+  --mdc-icon-button-icon-size: 18px;
+  margin-left: auto;
+  flex-shrink: 0;
+
+  &.active {
+    color: var(--mat-sys-primary);
+  }
+}
+
+.day-label {
+  font-weight: 500;
+  font-size: 0.85rem;
+  color: var(--mat-sys-on-surface);
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.day-total {
+  font-size: 0.8rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.day-timers {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+
+  app-timer-card {
+    cursor: pointer;
+  }
+}
+
+// --- New timer inline form ---
+
+.day-new-timer {
+  margin-bottom: 8px;
+}
+
+.day-template-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.day-tpl-btn {
+  font-size: 0.75rem;
+  text-transform: none;
+  letter-spacing: normal;
+  justify-content: flex-start;
+  min-height: 32px;
+  padding: 4px 8px;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.3;
+
+  .tpl-company {
+    font-weight: 500;
+  }
+
+  .tpl-sep {
+    margin: 0 3px;
+    color: var(--mat-sys-on-surface-variant);
+  }
+}
+
+.day-new-combo-btn {
+  font-size: 0.75rem;
+  min-height: 28px;
+}
+
+.day-new-form {
+  margin-top: 4px;
+
+  mat-card-content {
+    padding: 8px;
+  }
+}
+
+.day-form-field {
+  width: 100%;
+  font-size: 0.8rem;
+}
+
+.day-back-btn {
+  font-size: 0.75rem;
+  margin-bottom: 4px;
+}
+
+.recurring-check-icon {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+  vertical-align: middle;
+  margin-right: 2px;
+}
+
+.day-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+.empty-day {
+  font-size: 0.8rem;
+  color: var(--mat-sys-on-surface-variant);
+  text-align: center;
+  padding: 16px 4px;
+}
+
+// Responsive: stack columns on mobile
+@media (max-width: 768px) {
+  .day-grid,
+  .day-grid.show-weekend {
+    grid-template-columns: 1fr;
+  }
+
+  .skeleton-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .day-column {
+    border-bottom: 1px solid var(--mat-sys-outline-variant);
+    padding-bottom: 12px;
+  }
+}

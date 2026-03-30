@@ -1,338 +1,329 @@
-import { Component, OnInit, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { Component, OnInit, OnDestroy, signal, computed, PLATFORM_ID, inject } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { ActivatedRoute, Router } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
-import { ApiService } from '../../services/api.service';
-import { PreferencesService } from '../../services/preferences.service';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { BreadcrumbNavComponent, BreadcrumbItem } from '../../components/breadcrumb-nav';
 import { DurationPipe } from '../../pipes/duration.pipe';
-import type { Timer } from '../../models/types';
+import { SkeletonComponent } from '../../components/skeleton';
+import { Subscription } from 'rxjs';
+import { TimerService } from '../../services/timer.service';
+import { AuthService } from '../../services/auth.service';
+import { SseService } from '../../services/sse.service';
+import { Timer } from '../../models';
 
-interface CalendarDay {
-  date: Date;
-  dateStr: string;
-  dayNum: number;
+interface CompanyTotal {
+  companyName: string;
+  companyColor: string | null;
+  totalMs: number;
+}
+
+interface DayCell {
+  date: string;           // YYYY-MM-DD
+  dayOfMonth: number;
   isCurrentMonth: boolean;
   isToday: boolean;
-  timers: Timer[];
+  companyTotals: CompanyTotal[];
   totalMs: number;
-  companySummary: Array<{ name: string; color: string; ms: number }>;
+}
+
+interface WeekRow {
+  weekNumber: number;
+  weekStartDate: string;  // YYYY-MM-DD of Sunday
+  days: DayCell[];
 }
 
 @Component({
   selector: 'app-monthly',
-  standalone: true,
-  imports: [CommonModule, RouterModule, MatButtonModule, MatIconModule, MatChipsModule, DurationPipe],
-  template: `
-    <div class="header">
-      <button mat-icon-button (click)="prevMonth()"><mat-icon>chevron_left</mat-icon></button>
-      <h2>{{ monthLabel }}</h2>
-      <button mat-icon-button (click)="nextMonth()"><mat-icon>chevron_right</mat-icon></button>
-      @if (!isCurrentMonth) {
-        <button mat-stroked-button (click)="goThisMonth()">This Month</button>
-      }
-      <span class="total">{{ grandTotalMs | duration:'decimal' }}</span>
-    </div>
-
-    <!-- Company filter chips -->
-    @if (companyChips.length > 1) {
-      <div class="filter-chips">
-        @for (chip of companyChips; track chip.id) {
-          <mat-chip-option [selected]="chip.selected" (selectionChange)="chip.selected = !chip.selected">
-            {{ chip.name }}
-          </mat-chip-option>
-        }
-      </div>
-    }
-
-    <!-- Calendar grid -->
-    <div class="calendar">
-      <div class="weekday-headers">
-        @for (wd of weekdayHeaders; track wd) {
-          <div class="weekday-header">{{ wd }}</div>
-        }
-      </div>
-      <div class="calendar-grid">
-        @for (day of calendarDays; track day.dateStr) {
-          <a class="day-cell"
-             [class.other-month]="!day.isCurrentMonth"
-             [class.today]="day.isToday"
-             [class.has-data]="day.timers.length > 0"
-             [routerLink]="['/daily']"
-             [queryParams]="{date: day.dateStr}">
-            <div class="day-num">{{ day.dayNum }}</div>
-            @if (day.timers.length > 0) {
-              <div class="day-summary">
-                @for (cs of day.companySummary; track cs.name) {
-                  <div class="company-dot">
-                    <span class="dot" [style.background]="cs.color || 'var(--mat-sys-primary)'"></span>
-                    <span class="dot-hrs">{{ cs.ms | duration:'decimal' }}</span>
-                  </div>
-                }
-              </div>
-            }
-          </a>
-        }
-      </div>
-    </div>
-
-    <!-- Summary table -->
-    @if (monthRows.length) {
-      <div class="summary">
-        <h3>Summary</h3>
-        @for (row of monthRows; track row.key) {
-          <div class="summary-row">
-            <span>{{ row.companyName }} / {{ row.projectName }}</span>
-            <span class="summary-hrs">{{ row.totalMs | duration:'decimal' }} ({{ row.count }} timers)</span>
-          </div>
-        }
-      </div>
-    }
-  `,
-  styles: `
-    .header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-    h2 { margin: 0; min-width: 200px; text-align: center; }
-    .total {
-      margin-left: auto;
-      font-size: 1.2rem;
-      font-weight: 500;
-      color: var(--mat-sys-primary);
-    }
-    .filter-chips { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-    .weekday-headers {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      text-align: center;
-      font-weight: 600;
-      font-size: 0.8rem;
-      color: var(--mat-sys-on-surface-variant);
-      margin-bottom: 4px;
-    }
-    .calendar-grid {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 2px;
-    }
-    .day-cell {
-      border: 1px solid var(--mat-sys-outline-variant);
-      border-radius: 4px;
-      padding: 4px;
-      min-height: 60px;
-      text-decoration: none;
-      color: inherit;
-      cursor: pointer;
-      transition: background 0.15s;
-      &:hover { background: var(--mat-sys-surface-variant); }
-    }
-    .day-cell.other-month { opacity: 0.35; }
-    .day-cell.today {
-      border-color: var(--mat-sys-primary);
-      border-width: 2px;
-    }
-    .day-num {
-      font-size: 0.85rem;
-      font-weight: 500;
-    }
-    .day-summary { margin-top: 2px; }
-    .company-dot {
-      display: flex;
-      align-items: center;
-      gap: 3px;
-      font-size: 0.7rem;
-    }
-    .dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      display: inline-block;
-    }
-    .dot-hrs {
-      font-variant-numeric: tabular-nums;
-      color: var(--mat-sys-on-surface-variant);
-    }
-    .summary { margin-top: 24px; }
-    h3 { margin: 0 0 8px; }
-    .summary-row {
-      display: flex;
-      justify-content: space-between;
-      padding: 4px 0;
-      border-bottom: 1px solid var(--mat-sys-outline-variant);
-    }
-    .summary-hrs {
-      font-variant-numeric: tabular-nums;
-      color: var(--mat-sys-on-surface-variant);
-    }
-  `,
+  imports: [
+    MatButtonModule,
+    MatChipsModule,
+    MatIconModule,
+    MatSnackBarModule,
+    BreadcrumbNavComponent,
+    DurationPipe,
+    SkeletonComponent,
+  ],
+  templateUrl: './monthly.html',
+  styleUrl: './monthly.scss',
 })
-export class MonthlyComponent implements OnInit {
-  private api = inject(ApiService);
-  prefs = inject(PreferencesService);
+export class MonthlyComponent implements OnInit, OnDestroy {
+  auth = inject(AuthService);
+  private platformId = inject(PLATFORM_ID);
+  private snackBar = inject(MatSnackBar);
+  private sse = inject(SseService);
+  private sseSub?: Subscription;
 
-  year = new Date().getFullYear();
-  month = new Date().getMonth();
-  calendarDays: CalendarDay[] = [];
-  monthRows: Array<{ key: string; companyName: string; projectName: string; totalMs: number; count: number }> = [];
-  companyMap = new Map<string, string>();
-  companyColorMap = new Map<string, string>();
-  projectMap = new Map<string, string>();
-  companyChips: Array<{ id: string; name: string; selected: boolean }> = [];
-  weekdayHeaders = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  loading = signal(true);
+  timers = signal<Timer[]>([]);
+  selectedCompanies = signal<Set<string>>(new Set());
+  selectedYear = signal(new Date().getFullYear());
+  selectedMonth = signal(new Date().getMonth()); // 0-based
 
-  get monthLabel(): string {
-    return new Date(this.year, this.month).toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
-  }
+  breadcrumbs = computed<BreadcrumbItem[]>(() => [
+    { label: 'Home', url: '/' },
+    { label: this.monthLabel(), url: null },
+  ]);
 
-  get isCurrentMonth(): boolean {
+  monthLabel = computed(() => {
+    const date = new Date(this.selectedYear(), this.selectedMonth(), 1);
+    return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  });
+
+  isThisMonth = computed(() => {
     const now = new Date();
-    return this.year === now.getFullYear() && this.month === now.getMonth();
-  }
+    return this.selectedYear() === now.getFullYear() && this.selectedMonth() === now.getMonth();
+  });
 
-  get grandTotalMs(): number {
-    return this.calendarDays
-      .filter(d => d.isCurrentMonth)
-      .reduce((sum, d) => sum + d.totalMs, 0);
-  }
+  uniqueCompanyNames = computed(() => {
+    const names = new Set(this.timers().map((t) => t.company_name ?? 'Unknown'));
+    return [...names].sort();
+  });
 
-  ngOnInit(): void {
-    this.api.getCompanies().subscribe(list => {
-      this.companyMap = new Map(list.map(c => [c.id, c.name]));
-      this.companyColorMap = new Map(list.map(c => [c.id, c.color ?? '']));
-      this.api.getProjects().subscribe(projects => {
-        this.projectMap = new Map(projects.map(p => [p.id, p.name]));
-        this.loadMonth();
+  filteredTimers = computed(() => {
+    const selected = this.selectedCompanies();
+    if (selected.size === 0) return this.timers();
+    return this.timers().filter((t) => selected.has(t.company_name ?? 'Unknown'));
+  });
+
+  calendarWeeks = computed<WeekRow[]>(() => {
+    const year = this.selectedYear();
+    const month = this.selectedMonth();
+    const timers = this.filteredTimers();
+    const todayStr = this.formatDate(new Date());
+
+    // Build a map of date -> timers
+    const timersByDate = new Map<string, Timer[]>();
+    for (const t of timers) {
+      const effective = t.started || t.start_at;
+      if (!effective) continue;
+      const dateStr = new Date(effective).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+      if (!timersByDate.has(dateStr)) timersByDate.set(dateStr, []);
+      timersByDate.get(dateStr)!.push(t);
+    }
+
+    // First day of month and last day
+    const firstOfMonth = new Date(year, month, 1);
+    const lastOfMonth = new Date(year, month + 1, 0);
+
+    // Start from Sunday of the week containing the 1st
+    const startDay = new Date(firstOfMonth);
+    startDay.setDate(startDay.getDate() - startDay.getDay()); // back to Sunday
+
+    const weeks: WeekRow[] = [];
+    const cursor = new Date(startDay);
+
+    while (cursor <= lastOfMonth || cursor.getDay() !== 0) {
+      const days: DayCell[] = [];
+      const weekStartDate = this.formatDate(new Date(cursor));
+
+      for (let d = 0; d < 7; d++) {
+        const dateStr = this.formatDate(new Date(cursor));
+        const dayTimers = timersByDate.get(dateStr) || [];
+
+        // Aggregate by company
+        const companyMap = new Map<string, CompanyTotal>();
+        for (const t of dayTimers) {
+          const name = t.company_name ?? 'Unknown';
+          const existing = companyMap.get(name);
+          if (!t.started) continue; // skip scheduled (unstarted) timers
+          const ms = (t.ended || t.state === 'paused')
+            ? Number(t.duration_ms ?? 0)
+            : (t.state === 'running' ? Date.now() - new Date(t.started).getTime() : 0);
+          if (existing) {
+            existing.totalMs += ms;
+          } else {
+            companyMap.set(name, { companyName: name, companyColor: t.company_color ?? null, totalMs: ms });
+          }
+        }
+
+        const companyTotals = Array.from(companyMap.values()).sort((a, b) => b.totalMs - a.totalMs);
+        const totalMs = companyTotals.reduce((sum, c) => sum + c.totalMs, 0);
+
+        days.push({
+          date: dateStr,
+          dayOfMonth: cursor.getDate(),
+          isCurrentMonth: cursor.getMonth() === month,
+          isToday: dateStr === todayStr,
+          companyTotals,
+          totalMs,
+        });
+
+        cursor.setDate(cursor.getDate() + 1);
+      }
+
+      weeks.push({
+        weekNumber: this.getISOWeekNumber(new Date(weekStartDate + 'T12:00:00')),
+        weekStartDate,
+        days,
       });
-    });
-  }
 
-  prevMonth(): void {
-    this.month--;
-    if (this.month < 0) { this.month = 11; this.year--; }
-    this.loadMonth();
-  }
+      // Stop if we've passed the last day and completed the week
+      if (cursor.getMonth() !== month && cursor.getDay() === 0) break;
+    }
 
-  nextMonth(): void {
-    this.month++;
-    if (this.month > 11) { this.month = 0; this.year++; }
-    this.loadMonth();
-  }
+    return weeks;
+  });
 
-  goThisMonth(): void {
-    const now = new Date();
-    this.year = now.getFullYear();
-    this.month = now.getMonth();
-    this.loadMonth();
-  }
+  monthlyTotal = computed(() => {
+    return this.calendarWeeks().reduce((sum, week) =>
+      sum + week.days.reduce((wsum, day) =>
+        wsum + (day.isCurrentMonth ? day.totalMs : 0), 0), 0);
+  });
 
-  private loadMonth(): void {
-    const monthStr = `${this.year}-${String(this.month + 1).padStart(2, '0')}`;
-    const todayStr = new Date().toISOString().slice(0, 10);
-
-    this.api.getTimers().subscribe(allTimers => {
-      const timersByDate = new Map<string, Timer[]>();
-      for (const t of allTimers) {
-        if (!t.started) continue;
-        const ds = t.started.slice(0, 10);
-        if (!timersByDate.has(ds)) timersByDate.set(ds, []);
-        timersByDate.get(ds)!.push(t);
-      }
-
-      // Build calendar grid
-      const firstDay = new Date(this.year, this.month, 1);
-      const startOffset = firstDay.getDay(); // 0=Sun
-      const daysInMonth = new Date(this.year, this.month + 1, 0).getDate();
-
-      this.calendarDays = [];
-
-      // Previous month padding
-      for (let i = startOffset - 1; i >= 0; i--) {
-        const d = new Date(this.year, this.month, -i);
-        this.calendarDays.push(this.makeDay(d, false, todayStr, timersByDate));
-      }
-
-      // Current month
-      for (let i = 1; i <= daysInMonth; i++) {
-        const d = new Date(this.year, this.month, i);
-        this.calendarDays.push(this.makeDay(d, true, todayStr, timersByDate));
-      }
-
-      // Next month padding (fill to complete last week)
-      const remaining = 7 - (this.calendarDays.length % 7);
-      if (remaining < 7) {
-        for (let i = 1; i <= remaining; i++) {
-          const d = new Date(this.year, this.month + 1, i);
-          this.calendarDays.push(this.makeDay(d, false, todayStr, timersByDate));
+  monthlyCompanyTotals = computed(() => {
+    const map = new Map<string, number>();
+    for (const week of this.calendarWeeks()) {
+      for (const day of week.days) {
+        if (!day.isCurrentMonth) continue;
+        for (const ct of day.companyTotals) {
+          map.set(ct.companyName, (map.get(ct.companyName) ?? 0) + ct.totalMs);
         }
       }
+    }
+    return [...map.entries()]
+      .map(([name, ms]) => ({ name, ms }))
+      .sort((a, b) => b.ms - a.ms);
+  });
 
-      // Summary rows
-      const monthTimers = allTimers.filter(t => t.started?.startsWith(monthStr));
-      this.buildSummary(monthTimers);
-      this.buildChips(monthTimers);
+  constructor(
+    private timerService: TimerService,
+    private route: ActivatedRoute,
+    private router: Router,
+  ) {}
+
+  ngOnInit() {
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    this.sse.connect();
+    this.sseSub = this.sse.timerEvents$.subscribe(() => this.loadTimers());
+
+    this.route.paramMap.subscribe((params) => {
+      const yearParam = params.get('year');
+      const monthParam = params.get('month');
+      if (yearParam && monthParam) {
+        this.selectedYear.set(parseInt(yearParam, 10));
+        this.selectedMonth.set(parseInt(monthParam, 10) - 1); // URL is 1-based
+      }
+      this.waitForAuthThenLoad();
     });
   }
 
-  private makeDay(date: Date, isCurrentMonth: boolean, todayStr: string, timersByDate: Map<string, Timer[]>): CalendarDay {
-    const dateStr = date.toISOString().slice(0, 10);
-    const timers = timersByDate.get(dateStr) ?? [];
-    const totalMs = timers.reduce((sum, t) => sum + (t.duration_ms ?? 0), 0);
-
-    // Group by company for dots
-    const byCompany = new Map<string, number>();
-    for (const t of timers) {
-      byCompany.set(t.company_id, (byCompany.get(t.company_id) ?? 0) + (t.duration_ms ?? 0));
-    }
-    const companySummary = [...byCompany.entries()].map(([id, ms]) => ({
-      name: this.companyMap.get(id) ?? '',
-      color: this.companyColorMap.get(id) ?? '',
-      ms,
-    }));
-
-    return {
-      date,
-      dateStr,
-      dayNum: date.getDate(),
-      isCurrentMonth,
-      isToday: dateStr === todayStr,
-      timers,
-      totalMs,
-      companySummary,
-    };
+  ngOnDestroy() {
+    this.sseSub?.unsubscribe();
   }
 
-  private buildSummary(timers: Timer[]): void {
-    const groups = new Map<string, { companyName: string; projectName: string; totalMs: number; count: number }>();
-    for (const t of timers) {
-      const key = `${t.company_id}|${t.project_id ?? ''}`;
-      const existing = groups.get(key);
-      if (existing) {
-        existing.totalMs += t.duration_ms ?? 0;
-        existing.count++;
-      } else {
-        groups.set(key, {
-          companyName: this.companyMap.get(t.company_id) ?? '—',
-          projectName: t.project_id ? (this.projectMap.get(t.project_id) ?? '—') : '—',
-          totalMs: t.duration_ms ?? 0,
-          count: 1,
-        });
+  private waitForAuthThenLoad() {
+    const check = setInterval(() => {
+      if (!this.auth.loading()) {
+        clearInterval(check);
+        if (this.auth.user()) {
+          this.loadTimers();
+        } else {
+          this.loading.set(false);
+        }
       }
-    }
-    this.monthRows = [...groups.entries()]
-      .map(([key, val]) => ({ key, ...val }))
-      .sort((a, b) => b.totalMs - a.totalMs);
+    }, 50);
   }
 
-  private buildChips(timers: Timer[]): void {
-    const ids = new Set(timers.map(t => t.company_id));
-    this.companyChips = [...ids].map(id => ({
-      id,
-      name: this.companyMap.get(id) ?? id,
-      selected: this.companyChips.find(c => c.id === id)?.selected ?? true,
-    }));
+  loadTimers() {
+    this.loading.set(true);
+    const year = this.selectedYear();
+    const month = this.selectedMonth();
+
+    // Calculate full range including padding days from prev/next months
+    const firstOfMonth = new Date(year, month, 1);
+    const lastOfMonth = new Date(year, month + 1, 0);
+    const startDay = new Date(firstOfMonth);
+    startDay.setDate(startDay.getDate() - startDay.getDay()); // Sunday before
+    const endDay = new Date(lastOfMonth);
+    if (endDay.getDay() !== 6) {
+      endDay.setDate(endDay.getDate() + (6 - endDay.getDay())); // Saturday after
+    }
+
+    const from = this.formatDate(startDay);
+    const to = this.formatDate(endDay);
+
+    // Materialize recurring timers, then load
+    this.timerService.materialize(from, to).subscribe({
+      next: () => {
+        this.timerService.getByRange(from, to).subscribe((t) => {
+          this.timers.set(t);
+          this.loading.set(false);
+        });
+      },
+      error: () => {
+        this.timerService.getByRange(from, to).subscribe((t) => {
+          this.timers.set(t);
+          this.loading.set(false);
+        });
+      },
+    });
+  }
+
+  toggleCompanyFilter(name: string) {
+    const current = new Set(this.selectedCompanies());
+    if (current.has(name)) {
+      current.delete(name);
+    } else {
+      current.add(name);
+    }
+    this.selectedCompanies.set(current);
+  }
+
+  prevMonth() {
+    let y = this.selectedYear();
+    let m = this.selectedMonth() - 1;
+    if (m < 0) { m = 11; y--; }
+    this.navigateToMonth(y, m);
+  }
+
+  nextMonth() {
+    let y = this.selectedYear();
+    let m = this.selectedMonth() + 1;
+    if (m > 11) { m = 0; y++; }
+    this.navigateToMonth(y, m);
+  }
+
+  thisMonth() {
+    const now = new Date();
+    this.navigateToMonth(now.getFullYear(), now.getMonth());
+  }
+
+  private navigateToMonth(year: number, month: number) {
+    this.selectedYear.set(year);
+    this.selectedMonth.set(month);
+    this.router.navigate(['/monthly', year, month + 1]); // URL is 1-based
+    this.loadTimers();
+  }
+
+  navigateToDay(date: string) {
+    this.router.navigate(['/today', date], {
+      queryParams: { from: 'monthly' },
+    });
+  }
+
+  navigateToWeek(weekStartDate: string) {
+    // Get the Monday of this week (weekStartDate is Sunday)
+    const sun = new Date(weekStartDate + 'T12:00:00');
+    const mon = new Date(sun);
+    mon.setDate(mon.getDate() + 1);
+    this.router.navigate(['/weekly', this.formatDate(mon)], {
+      queryParams: { from: 'monthly' },
+    });
+  }
+
+  formatDate(date: Date): string {
+    return date.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+  }
+
+  private getISOWeekNumber(date: Date): number {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   }
 }

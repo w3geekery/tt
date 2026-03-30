@@ -7,6 +7,7 @@
  */
 
 import express from 'express';
+import type { Request, Response } from 'express';
 import config from '../../../tt.config.js';
 import { getDb } from '../db/connection.js';
 import { loadExtensions } from '../extensions.js';
@@ -19,21 +20,40 @@ import { capStatusRouter } from './routes/cap-status.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { recurringRouter } from './routes/recurring.js';
 import { invoicesRouter } from './routes/invoices.js';
+import { autocapRouter } from './routes/autocap.js';
+import { templatesRouter } from './routes/templates.js';
 import { startCron } from '../cron/engine.js';
 
 export function createApp() {
   const app = express();
   app.use(express.json());
 
-  // API routes
+  // Auth stub — GET /api/auth/me
+  app.get('/api/auth/me', (_req: Request, res: Response) => {
+    res.json({
+      id: 'local',
+      username: 'clark',
+      avatar_url: null,
+    });
+  });
+
+  // API routes — recurring BEFORE timers (so /api/timers/recurring doesn't match /:id)
+  app.use('/api/timers/recurring', recurringRouter);
   app.use('/api/timers', timersRouter);
   app.use('/api/companies', companiesRouter);
   app.use('/api/projects', projectsRouter);
   app.use('/api/tasks', tasksRouter);
   app.use('/api/cap-status', capStatusRouter);
   app.use('/api/notifications', notificationsRouter);
-  app.use('/api/recurring', recurringRouter);
   app.use('/api/invoices', invoicesRouter);
+  app.use('/api/autocap', autocapRouter);
+  app.use('/api/templates', templatesRouter);
+  // Weekly tasks
+  app.get('/api/weekly-tasks', (_req: Request, res: Response) => {
+    // Stub — return empty array
+    res.json([]);
+  });
+
   app.get('/api/sse', sseHandler);
 
   return app;

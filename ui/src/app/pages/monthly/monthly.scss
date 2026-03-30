@@ -1,0 +1,278 @@
+.monthly-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.login-prompt {
+  text-align: center;
+  padding: 64px 24px;
+
+  p {
+    margin: 16px 0 24px;
+    color: var(--mat-sys-on-surface-variant);
+  }
+}
+
+// --- Month Navigation ---
+
+.month-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.month-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.month-display {
+  flex: 1;
+  text-align: center;
+
+  h1 {
+    font-size: 1.25rem;
+    margin: 0;
+  }
+}
+
+.month-totals-panel {
+  background: var(--mat-sys-surface-container);
+  border-radius: 8px;
+  padding: 12px 16px;
+  min-width: 200px;
+  flex-shrink: 0;
+}
+
+.month-totals-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+}
+
+.month-totals-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.month-totals-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.month-totals-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+}
+
+.month-totals-company {
+  font-size: 0.8rem;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.month-totals-hours {
+  font-size: 0.8rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.company-filter-chips {
+  margin-bottom: 12px;
+}
+
+// --- Calendar Grid ---
+
+.calendar {
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.calendar-header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr) 40px;
+  background: var(--mat-sys-surface-container);
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+}
+
+.day-name {
+  padding: 8px 4px;
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.actions-header {
+  // Empty header cell for the actions column
+}
+
+.calendar-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr) 40px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.week-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 4px 0;
+  border-left: 1px solid var(--mat-sys-outline-variant);
+
+  button {
+    --mdc-icon-button-state-layer-size: 32px;
+    --mdc-icon-button-icon-size: 18px;
+    color: var(--mat-sys-on-surface-variant);
+
+    &:hover {
+      color: var(--mat-sys-primary);
+    }
+  }
+}
+
+.day-cell {
+  min-height: 80px;
+  padding: 4px 6px;
+  cursor: pointer;
+  border-right: 1px solid var(--mat-sys-outline-variant);
+  transition: background 0.15s;
+
+  &:last-child {
+    border-right: none;
+  }
+
+  &:hover {
+    background: var(--mat-sys-surface-container-low);
+  }
+
+  &.other-month {
+    opacity: 0.35;
+  }
+
+  &.today {
+    background: var(--mat-sys-primary-container);
+
+    .day-number {
+      color: var(--mat-sys-on-primary-container);
+      font-weight: 700;
+    }
+  }
+
+  &.today:hover {
+    background: var(--mat-sys-primary-container);
+    filter: brightness(0.95);
+  }
+}
+
+.day-number {
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.day-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.company-entry {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.65rem;
+  line-height: 1.3;
+}
+
+.company-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.company-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.company-hours {
+  font-variant-numeric: tabular-nums;
+  color: var(--mat-sys-on-surface-variant);
+  flex-shrink: 0;
+}
+
+.day-total {
+  font-size: 0.7rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+  color: var(--mat-sys-primary);
+}
+
+// --- Responsive ---
+
+@media (max-width: 768px) {
+  .monthly-page {
+    padding: 12px;
+  }
+
+  .calendar-header {
+    grid-template-columns: repeat(7, 1fr) 28px;
+  }
+
+  .calendar-row {
+    grid-template-columns: repeat(7, 1fr) 28px;
+  }
+
+  .day-cell {
+    min-height: 56px;
+    padding: 2px 3px;
+  }
+
+  .day-number {
+    font-size: 0.7rem;
+  }
+
+  .company-entry {
+    font-size: 0.55rem;
+  }
+
+  .company-name {
+    display: none;
+  }
+
+  .day-total {
+    font-size: 0.6rem;
+  }
+
+  .week-num {
+    font-size: 0.6rem;
+    padding: 4px 2px;
+  }
+
+  .week-num-header {
+    font-size: 0.6rem;
+  }
+
+  .day-name {
+    font-size: 0.65rem;
+  }
+}

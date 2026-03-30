@@ -1,0 +1,118 @@
+<div class="monthly-page">
+  @if (auth.loading()) {
+    <app-skeleton width="100%" height="400px" radius="12px" />
+  } @else if (!auth.user()) {
+    <div class="login-prompt">
+      <h1>Time Tracker</h1>
+      <p>Sign in to view your timers.</p>
+      <button mat-raised-button color="primary" (click)="auth.login()">
+        Sign in with GitHub
+      </button>
+    </div>
+  } @else {
+    <app-breadcrumb-nav [items]="breadcrumbs()" />
+
+    <!-- Month Navigation + Totals Panel -->
+    <div class="month-header">
+      <div class="month-nav">
+        <button mat-icon-button (click)="prevMonth()">
+          <mat-icon>chevron_left</mat-icon>
+        </button>
+
+        <div class="month-display">
+          <h1>{{ monthLabel() }}</h1>
+          @if (!isThisMonth()) {
+            <button mat-button (click)="thisMonth()">This Month</button>
+          }
+        </div>
+
+        <button mat-icon-button (click)="nextMonth()">
+          <mat-icon>chevron_right</mat-icon>
+        </button>
+      </div>
+
+      @if (loading()) {
+        <app-skeleton width="232px" height="133px" radius="8px" />
+      } @else {
+        <div class="month-totals-panel">
+          <div class="month-totals-header">
+            <span class="month-totals-title">Monthly Total</span>
+            <span class="month-totals-value">{{ monthlyTotal() | duration }}</span>
+          </div>
+          @for (ct of monthlyCompanyTotals(); track ct.name) {
+            <div class="month-totals-row">
+              <span class="month-totals-company">{{ ct.name }}</span>
+              <span class="month-totals-hours">{{ ct.ms | duration }}</span>
+            </div>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Company Filter Chips -->
+    @if (uniqueCompanyNames().length > 1) {
+      <mat-chip-set class="company-filter-chips">
+        @for (name of uniqueCompanyNames(); track name) {
+          <mat-chip [highlighted]="selectedCompanies().has(name)" (click)="toggleCompanyFilter(name)">
+            {{ name }}
+          </mat-chip>
+        }
+      </mat-chip-set>
+    }
+
+    @if (loading()) {
+      <app-skeleton width="100%" height="400px" radius="12px" />
+    } @else {
+      <!-- Calendar Grid -->
+      <div class="calendar">
+        <!-- Header row: day names + actions -->
+        <div class="calendar-header">
+          <div class="day-name">Sun</div>
+          <div class="day-name">Mon</div>
+          <div class="day-name">Tue</div>
+          <div class="day-name">Wed</div>
+          <div class="day-name">Thu</div>
+          <div class="day-name">Fri</div>
+          <div class="day-name">Sat</div>
+          <div class="actions-header"></div>
+        </div>
+
+        <!-- Week rows -->
+        @for (week of calendarWeeks(); track week.weekNumber + '-' + week.weekStartDate) {
+          <div class="calendar-row">
+
+            @for (day of week.days; track day.date) {
+              <div class="day-cell"
+                   [class.other-month]="!day.isCurrentMonth"
+                   [class.today]="day.isToday"
+                   [class.has-data]="day.totalMs > 0"
+                   (click)="navigateToDay(day.date)">
+                <div class="day-number">{{ day.dayOfMonth }}</div>
+                @if (day.totalMs > 0) {
+                  <div class="day-entries">
+                    @for (ct of day.companyTotals; track ct.companyName) {
+                      <div class="company-entry">
+                        @if (ct.companyColor) {
+                          <span class="company-dot" [style.background]="ct.companyColor"></span>
+                        }
+                        <span class="company-name">{{ ct.companyName }}</span>
+                        <span class="company-hours">{{ ct.totalMs | duration }}</span>
+                      </div>
+                    }
+                  </div>
+                  <div class="day-total">{{ day.totalMs | duration }}</div>
+                }
+              </div>
+            }
+
+            <div class="week-actions">
+              <button mat-icon-button (click)="navigateToWeek(week.weekStartDate)" title="View week {{ week.weekNumber }}">
+                <mat-icon>view_week</mat-icon>
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+    }
+  }
+</div>

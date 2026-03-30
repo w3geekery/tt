@@ -1,34 +1,61 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, signal, computed, PLATFORM_ID, inject } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 
-export type ThemeMode = 'light' | 'dark' | 'system';
+export type ThemeMode = 'system' | 'light' | 'dark';
 
-const STORAGE_KEY = 'tt-theme';
+const STORAGE_KEY = 'tt_theme';
 
 @Injectable({ providedIn: 'root' })
 export class ThemeService {
-  mode = signal<ThemeMode>(this.loadMode());
+  readonly mode = signal<ThemeMode>('system');
+  private platformId = inject(PLATFORM_ID);
+  private systemDark = signal(false);
 
-  toggle(): void {
-    const order: ThemeMode[] = ['system', 'light', 'dark'];
-    const idx = order.indexOf(this.mode());
-    const next = order[(idx + 1) % order.length];
-    this.setMode(next);
-  }
-
-  setMode(mode: ThemeMode): void {
-    this.mode.set(mode);
-    localStorage.setItem(STORAGE_KEY, mode);
-    this.applyToDocument();
-  }
-
-  applyToDocument(): void {
+  /** True when the effective theme is dark (explicit or system-detected) */
+  readonly isDark = computed(() => {
     const m = this.mode();
-    const scheme = m === 'system' ? 'light dark' : m;
-    document.body.style.colorScheme = scheme;
+    if (m === 'dark') return true;
+    if (m === 'light') return false;
+    return this.systemDark(); // system mode — use media query result
+  });
+
+  init() {
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    // Detect system dark preference
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    this.systemDark.set(mq.matches);
+    mq.addEventListener('change', (e) => this.systemDark.set(e.matches));
+
+    const stored = localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
+    if (stored && ['system', 'light', 'dark'].includes(stored)) {
+      this.mode.set(stored);
+    }
+    this.apply();
   }
 
-  private loadMode(): ThemeMode {
-    const stored = localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
-    return stored ?? 'system';
+  setMode(mode: ThemeMode) {
+    this.mode.set(mode);
+    if (isPlatformBrowser(this.platformId)) {
+      localStorage.setItem(STORAGE_KEY, mode);
+    }
+    this.apply();
+  }
+
+  private apply() {
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    const body = document.body;
+    switch (this.mode()) {
+      case 'light':
+        body.style.colorScheme = 'light';
+        break;
+      case 'dark':
+        body.style.colorScheme = 'dark';
+        break;
+      case 'system':
+        body.style.colorScheme = 'light dark';
+        break;
+    }
   }
 }

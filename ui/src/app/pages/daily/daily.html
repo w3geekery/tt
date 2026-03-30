@@ -1,0 +1,145 @@
+<div class="daily-page">
+  @if (auth.loading()) {
+    <div class="skeleton-daily">
+      <app-skeleton width="100%" height="2rem" />
+      <app-skeleton width="100%" height="120px" radius="12px" />
+      <app-skeleton width="100%" height="120px" radius="12px" />
+    </div>
+  } @else if (!auth.user()) {
+    <div class="login-prompt">
+      <h1>Time Tracker</h1>
+      <p>Sign in to view your timers.</p>
+      <button mat-raised-button color="primary" (click)="auth.login()">
+        Sign in with GitHub
+      </button>
+    </div>
+  } @else {
+    <app-breadcrumb-nav [items]="breadcrumbs()" />
+
+    <!-- Date Navigation -->
+    <div class="date-nav">
+      <button mat-icon-button (click)="prevDay()">
+        <mat-icon>chevron_left</mat-icon>
+      </button>
+
+      <div class="date-display">
+        <h1>{{ formatDisplayDate(selectedDate()) }}</h1>
+        @if (!isToday()) {
+          <button mat-button (click)="today()">Today</button>
+        }
+      </div>
+
+      <button mat-icon-button (click)="nextDay()">
+        <mat-icon>chevron_right</mat-icon>
+      </button>
+
+      <input
+        type="date"
+        class="date-picker-input"
+        [value]="dateString()"
+        (change)="onDateChange($any($event.target).valueAsDate)"
+      />
+    </div>
+
+    <!-- Notification Timeline -->
+    <app-notification-timeline
+      [notifications]="notifications()"
+      [date]="dateString()"
+      [settings]="timelineSettings()"
+      (onAddNotification)="onAddNotification($event)"
+    />
+
+    <!-- Daily Cap Lanes -->
+    @for (cap of dailyCaps(); track cap.projectId) {
+      <div class="cap-lane">
+        <app-cap-progress-bar
+          [pct]="cap.daily!.pct"
+          [status]="cap.daily!.status"
+          orientation="horizontal"
+          width="100%"
+          [tooltip]="cap.company + ' | ' + cap.project + ' ' + cap.daily!.cap + 'hr daily cap: ' + cap.daily!.logged + 'h / ' + cap.daily!.cap + 'h'"
+        />
+        <span class="cap-lane-label">{{ cap.daily!.pct }}% · {{ cap.company }} | {{ cap.project }} {{ cap.daily!.cap }}hr/day</span>
+        <button mat-icon-button class="cap-bell-btn" (click)="toggleProjectCapNotification(cap)"
+          [title]="getProjectNotifyOnCap(cap.projectId) ? 'Cap alerts enabled (click to disable)' : 'Cap alerts disabled (click to enable)'">
+          <mat-icon class="cap-bell-icon">{{ getProjectNotifyOnCap(cap.projectId) ? 'notifications_active' : 'notifications_off' }}</mat-icon>
+        </button>
+      </div>
+    }
+
+    <!-- Company Filter Chips -->
+    @if (uniqueCompanyNames().length > 1) {
+      <mat-chip-set class="company-filter-chips">
+        @for (name of uniqueCompanyNames(); track name) {
+          <mat-chip [highlighted]="selectedCompanies().has(name)" (click)="toggleCompanyFilter(name)">
+            {{ name }}
+          </mat-chip>
+        }
+      </mat-chip-set>
+    }
+
+    <!-- Add Timer Button -->
+    <div class="add-timer">
+      <button mat-raised-button color="primary" (click)="addTimer()">
+        <mat-icon>add</mat-icon> New Timer
+      </button>
+    </div>
+
+    <!-- Active / Upcoming Timers -->
+    @for (timer of activeTimers(); track timer.id) {
+      <app-timer-card
+        [timer]="timer"
+        (onStop)="stopTimer($event)"
+        (onPause)="pauseTimer($event)"
+        (onResume)="resumeTimer($event)"
+        (onScheduleStop)="scheduleStopTimer($event)"
+        (onTimeUpdate)="updateTimerTime($event)"
+        (onDelete)="deleteTimer($event)"
+        (onUpdate)="updateTimer($event)"
+      />
+    }
+
+    <!-- History Divider -->
+    @if (historyTimers().length > 0) {
+      <div class="history-divider">
+        <hr />
+        <span>History</span>
+        <hr />
+      </div>
+    }
+
+    <!-- Completed Timers -->
+    @for (timer of historyTimers(); track timer.id) {
+      <app-timer-card
+        [timer]="timer"
+        (onStop)="stopTimer($event)"
+        (onPause)="pauseTimer($event)"
+        (onResume)="resumeTimer($event)"
+        (onScheduleStop)="scheduleStopTimer($event)"
+        (onTimeUpdate)="updateTimerTime($event)"
+        (onDelete)="deleteTimer($event)"
+        (onUpdate)="updateTimer($event)"
+      />
+    }
+
+    @if (activeTimers().length === 0 && historyTimers().length === 0) {
+      <p class="empty-state">No timers for this day.</p>
+    }
+
+    <!-- Daily Summary -->
+    @if (timers().length > 0) {
+      <div class="daily-summary">
+        <div class="summary-total">
+          <span class="summary-label">Daily Total</span>
+          <span class="summary-value">{{ dailyTotal() | duration }}</span>
+        </div>
+        @for (ct of companyTotals(); track ct.name) {
+          <div class="summary-company">
+            <span>{{ ct.name }}</span>
+            <span>{{ ct.ms | duration }}</span>
+          </div>
+        }
+      </div>
+    }
+  }
+</div>

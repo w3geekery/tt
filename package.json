@@ -13,6 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "migrate": "tsx scripts/migrate-from-neon.ts",
+    "sync": "tsx scripts/sync-from-neon.ts",
+    "sync:to-neon": "tsx scripts/sync-to-neon.ts",
     "backup": "tsx scripts/backup.ts",
     "restore": "tsx scripts/restore.ts",
     "release": "standard-version",
@@ -22,12 +24,14 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "better-sqlite3": "^11.0.0",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "pg": "^8.20.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.20.0",
     "@types/supertest": "^7.2.0",
     "concurrently": "^9.0.0",
     "standard-version": "^9.5.0",

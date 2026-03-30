@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.w3geekery.tt-sync-neon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>
+            # Only run during working hours (6 AM - 9 PM PT)
+            hour=$(date +%H)
+            if [ "$hour" -ge 6 ] &amp;&amp; [ "$hour" -lt 21 ]; then
+                cd /Users/cstacer/Projects/w3geekery/tt
+                /usr/local/bin/npx tsx scripts/sync-to-neon.ts >> /tmp/tt-sync-neon.log 2>&amp;1
+            fi
+        </string>
+    </array>
+    <key>StartInterval</key>
+    <integer>3600</integer>
+    <key>StandardOutPath</key>
+    <string>/tmp/tt-sync-neon.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/tt-sync-neon.log</string>
+</dict>
+</plist>

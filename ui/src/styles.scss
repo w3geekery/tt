@@ -1,42 +1,66 @@
 @use '@angular/material' as mat;
 
+$theme: (
+  color: (
+    primary: mat.$azure-palette,
+    tertiary: mat.$blue-palette,
+    error: mat.$red-palette,
+  ),
+  typography: Roboto,
+  density: 0,
+);
+
 html {
   height: 100%;
-  @include mat.theme(
-    (
-      color: (
-        primary: mat.$cyan-palette,
-        tertiary: mat.$violet-palette,
-      ),
-      typography: Roboto,
-      density: -1,
-    )
-  );
+  @include mat.theme($theme);
+
+  // Stop button needs high-contrast red in both light and dark modes.
+  // M3's --mat-sys-error is too light in dark mode for white text.
+  --app-stop-bg: light-dark(#d32f2f, #b71c1c);
+  --app-stop-fg: #fff;
+}
+
+// M3 doesn't style color="warn" from templates — manually map .mat-warn to error palette.
+.mat-warn {
+  // text buttons, outlined buttons
+  --mat-button-text-label-text-color: var(--mat-sys-error);
+  --mat-button-text-state-layer-color: var(--mat-sys-error);
+  --mat-button-outlined-label-text-color: var(--mat-sys-error);
+  --mat-button-outlined-state-layer-color: var(--mat-sys-error);
+
+  // filled / raised buttons
+  --mat-button-filled-container-color: var(--mat-sys-error);
+  --mat-button-filled-label-text-color: var(--mat-sys-on-error);
+  --mat-button-filled-state-layer-color: var(--mat-sys-on-error);
+  --mat-button-protected-container-color: var(--mat-sys-error);
+  --mat-button-protected-label-text-color: var(--mat-sys-on-error);
+  --mat-button-protected-state-layer-color: var(--mat-sys-on-error);
+
+  // icon buttons
+  --mat-icon-button-icon-color: var(--mat-sys-error);
+  --mat-icon-button-state-layer-color: var(--mat-sys-error);
+
+  // FABs
+  --mat-fab-container-color: var(--mat-sys-error-container);
+  --mat-fab-foreground-color: var(--mat-sys-on-error-container);
+  --mat-fab-state-layer-color: var(--mat-sys-on-error-container);
+  --mat-fab-small-container-color: var(--mat-sys-error-container);
+  --mat-fab-small-foreground-color: var(--mat-sys-on-error-container);
+  --mat-fab-small-state-layer-color: var(--mat-sys-on-error-container);
+}
+
+.changelog-panel .mat-mdc-dialog-surface {
+  border-radius: 0;
 }
 
 body {
+  // Default to system preference — overridden by ThemeService
   color-scheme: light dark;
+
   background-color: var(--mat-sys-surface);
   color: var(--mat-sys-on-surface);
   font: var(--mat-sys-body-medium);
+
   margin: 0;
   height: 100%;
-}
-
-.page-container {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 16px;
-}
-
-.timer-state-running {
-  color: var(--mat-sys-primary);
-}
-
-.timer-state-paused {
-  color: var(--mat-sys-tertiary);
-}
-
-.timer-state-stopped {
-  color: var(--mat-sys-on-surface-variant);
 }

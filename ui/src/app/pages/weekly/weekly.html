@@ -1,0 +1,290 @@
+<div class="weekly-page">
+  @if (auth.loading()) {
+    <div class="skeleton-weekly">
+      <app-skeleton width="100%" height="2rem" />
+      <div class="skeleton-grid">
+        @for (i of [1,2,3,4,5]; track i) {
+          <div class="skeleton-col">
+            <app-skeleton width="100%" height="1.5rem" />
+            <app-skeleton width="100%" height="80px" radius="12px" />
+            <app-skeleton width="100%" height="80px" radius="12px" />
+          </div>
+        }
+      </div>
+    </div>
+  } @else if (!auth.user()) {
+    <div class="login-prompt">
+      <h1>Time Tracker</h1>
+      <p>Sign in to view your timers.</p>
+      <button mat-raised-button color="primary" (click)="auth.login()">
+        Sign in with GitHub
+      </button>
+    </div>
+  } @else {
+    <app-breadcrumb-nav [items]="breadcrumbs()" />
+
+    <!-- Week Navigation + Totals Panel -->
+    <div class="week-header">
+      <div class="week-nav">
+        <button mat-icon-button (click)="prevWeek()">
+          <mat-icon>chevron_left</mat-icon>
+        </button>
+
+        <div class="week-display">
+          <h1>{{ weekLabel() }}</h1>
+          @if (!isThisWeek()) {
+            <button mat-button (click)="thisWeek()">This Week</button>
+          }
+        </div>
+
+        <button mat-icon-button (click)="nextWeek()">
+          <mat-icon>chevron_right</mat-icon>
+        </button>
+      </div>
+
+      @if (loading()) {
+        <app-skeleton width="232px" height="133px" radius="8px" />
+        <app-skeleton width="232px" height="133px" radius="8px" />
+      } @else {
+        <div class="week-totals-panel">
+          <div class="week-totals-header">
+            <span class="week-totals-title">Weekly Total</span>
+            <span class="week-totals-value">{{ weeklyTotal() | duration }}</span>
+          </div>
+          @for (ct of weeklyCompanyTotals(); track ct.name) {
+            <div class="week-totals-row">
+              <span class="week-totals-company">{{ ct.name }}</span>
+              <span class="week-totals-hours">{{ ct.ms | duration }}</span>
+            </div>
+          }
+        </div>
+
+        @if (weeklyCaps().length > 0) {
+          <div class="week-caps-panel">
+            <div class="week-caps-title">Weekly Caps</div>
+            @for (cap of weeklyCaps(); track cap.projectId) {
+              <div class="week-caps-item">
+                <span class="weekly-cap-label">{{ cap.weekly!.pct }}% · {{ cap.company }} | {{ cap.project }} {{ cap.weekly!.cap }}hr/wk</span>
+                <app-cap-progress-bar
+                  [pct]="cap.weekly!.pct"
+                  [status]="cap.weekly!.status"
+                  orientation="horizontal"
+                  width="100%"
+                  height="10px"
+                  [tooltip]="cap.weekly!.logged + 'h / ' + cap.weekly!.cap + 'h (' + cap.weekly!.pct + '%)'"
+                />
+              </div>
+            }
+          </div>
+        }
+      }
+    </div>
+
+
+    <!-- Company Filter Chips + ZB Task Links -->
+    <div class="filter-row">
+      @if (uniqueCompanyNames().length > 1) {
+        <mat-chip-set class="company-filter-chips">
+          @for (name of uniqueCompanyNames(); track name) {
+            <mat-chip [highlighted]="selectedCompanies().has(name)" (click)="toggleCompanyFilter(name)">
+              {{ name }}
+            </mat-chip>
+          }
+        </mat-chip-set>
+      }
+      @if (weeklyZbTasks().length > 0) {
+        <div class="zb-task-links">
+          @for (task of weeklyZbTasks(); track task.taskId) {
+            <div class="zb-task-split" [title]="'Weekly Task ' + task.taskCode + ' for ' + task.company">
+              <span class="zb-task-label">{{ task.company === 'ZeroBias' ? 'ZB' : 'W3G' }}: {{ task.taskCode }}</span>
+              <button class="zb-task-caret" [matMenuTriggerFor]="zbTaskMenu">
+                <mat-icon>arrow_drop_down</mat-icon>
+              </button>
+            </div>
+            <mat-menu #zbTaskMenu="matMenu">
+              <button mat-menu-item (click)="copyZbTaskLink(task)">
+                <mat-icon>content_copy</mat-icon> Copy link
+              </button>
+              <button mat-menu-item (click)="openZbTask(task)">
+                <mat-icon>open_in_new</mat-icon> Open in new tab
+              </button>
+            </mat-menu>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Loading overlay for data refresh -->
+    @if (loading()) {
+      <div class="skeleton-grid">
+        @for (i of [1,2,3,4,5]; track i) {
+          <div class="skeleton-col">
+            <app-skeleton width="100%" height="1.5rem" />
+            <app-skeleton width="100%" height="80px" radius="12px" />
+            <app-skeleton width="100%" height="80px" radius="12px" />
+          </div>
+        }
+      </div>
+    } @else {
+      <!-- Day Columns Grid -->
+      <div class="day-grid" [class.show-weekend]="prefs.showWeekend()">
+        @for (day of dayColumns(); track day.date) {
+          <div class="day-column">
+            <div class="day-header">
+              <a class="day-label" [routerLink]="['/today', day.date]">{{ day.label }}</a>
+              <span class="day-total">{{ day.totalMs | duration }}</span>
+              <button mat-icon-button class="day-add-btn" (click)="toggleNewTimerForm(day.date)" [class.active]="newTimerForDate() === day.date">
+                <mat-icon>{{ newTimerForDate() === day.date ? 'close' : 'add' }}</mat-icon>
+              </button>
+            </div>
+
+            <!-- New timer form for this column -->
+            @if (newTimerForDate() === day.date) {
+              <div class="day-new-timer">
+                @if (!showFullForm() && templates().length > 0) {
+                  <div class="day-template-picker">
+                    @for (tpl of templates(); track tpl.company_id + '-' + tpl.project_id + '-' + tpl.task_id) {
+                      <button mat-stroked-button class="day-tpl-btn" (click)="startFromTemplate(tpl)">
+                        <span class="tpl-company">{{ tpl.company_name }}</span>
+                        @if (tpl.project_name) { <span class="tpl-sep">›</span> {{ tpl.project_name }} }
+                        @if (tpl.task_name) { <span class="tpl-sep">›</span> {{ tpl.task_name }} }
+                      </button>
+                    }
+                    <button mat-button class="day-new-combo-btn" (click)="showFullForm.set(true)">
+                      <mat-icon>add</mat-icon> New...
+                    </button>
+                  </div>
+                }
+                @if (showFullForm() || templates().length === 0) {
+                  <mat-card class="day-new-form">
+                    <mat-card-content>
+                      @if (templates().length > 0) {
+                        <button mat-button (click)="showFullForm.set(false)" class="day-back-btn">
+                          <mat-icon>arrow_back</mat-icon> Templates
+                        </button>
+                      }
+                      <mat-form-field class="day-form-field">
+                        <mat-label>Company</mat-label>
+                        <mat-select [ngModel]="newCompanyId()" (ngModelChange)="onNewCompanyChange($event)" required>
+                          @for (company of companies(); track company.id) {
+                            <mat-option [value]="company.id">{{ company.name }}</mat-option>
+                          }
+                        </mat-select>
+                      </mat-form-field>
+                      <mat-form-field class="day-form-field">
+                        <mat-label>Project</mat-label>
+                        <mat-select [ngModel]="newProjectId()" (ngModelChange)="onNewProjectChange($event)">
+                          <mat-option [value]="null">None</mat-option>
+                          @for (project of filteredProjects(); track project.id) {
+                            <mat-option [value]="project.id">{{ project.name }}</mat-option>
+                          }
+                        </mat-select>
+                      </mat-form-field>
+                      <mat-form-field class="day-form-field">
+                        <mat-label>Task</mat-label>
+                        <mat-select [(ngModel)]="newTaskId">
+                          <mat-option [value]="null">None</mat-option>
+                          @for (task of filteredTasks(); track task.id) {
+                            <mat-option [value]="task.id">{{ task.name }}</mat-option>
+                          }
+                        </mat-select>
+                      </mat-form-field>
+                      <mat-form-field class="day-form-field">
+                        <mat-label>Notes</mat-label>
+                        <textarea matInput [(ngModel)]="newNotes" rows="1"></textarea>
+                      </mat-form-field>
+                      <!-- Recurring toggle -->
+                      <mat-checkbox [checked]="newRecurring()" (change)="newRecurring.set($event.checked)">
+                        <mat-icon class="recurring-check-icon">repeat</mat-icon> Recurring
+                      </mat-checkbox>
+
+                      @if (newRecurring()) {
+                        <mat-form-field class="day-form-field">
+                          <mat-label>Pattern</mat-label>
+                          <mat-select [ngModel]="newRecurringPattern()" (ngModelChange)="newRecurringPattern.set($event)">
+                            <mat-option value="weekdays">Weekdays (Mon–Fri)</mat-option>
+                            <mat-option value="weekly">Weekly</mat-option>
+                          </mat-select>
+                        </mat-form-field>
+                        @if (newRecurringPattern() === 'weekly') {
+                          <mat-form-field class="day-form-field">
+                            <mat-label>Day of Week</mat-label>
+                            <mat-select [ngModel]="newRecurringWeekday()" (ngModelChange)="newRecurringWeekday.set($event)">
+                              <mat-option [value]="0">Sunday</mat-option>
+                              <mat-option [value]="1">Monday</mat-option>
+                              <mat-option [value]="2">Tuesday</mat-option>
+                              <mat-option [value]="3">Wednesday</mat-option>
+                              <mat-option [value]="4">Thursday</mat-option>
+                              <mat-option [value]="5">Friday</mat-option>
+                              <mat-option [value]="6">Saturday</mat-option>
+                            </mat-select>
+                          </mat-form-field>
+                        }
+                        <mat-form-field class="day-form-field">
+                          <mat-label>Start Time</mat-label>
+                          <input matInput type="time" [ngModel]="newRecurringStartTime()" (ngModelChange)="newRecurringStartTime.set($event)" />
+                        </mat-form-field>
+                      } @else if (day.date !== todayStr()) {
+                        <mat-form-field class="day-form-field">
+                          <mat-label>Start Time</mat-label>
+                          <input matInput type="datetime-local" [(ngModel)]="scheduleStart" />
+                        </mat-form-field>
+                      }
+                      <div class="day-form-actions">
+                        <button mat-raised-button color="primary" [disabled]="!newCompanyId()" (click)="startNewTimer()">
+                          {{ newRecurring() ? 'Create Recurring' : (day.date === todayStr() ? 'Start' : 'Save') }}
+                        </button>
+                      </div>
+                    </mat-card-content>
+                  </mat-card>
+                }
+              </div>
+            }
+
+            <app-notification-timeline
+              [notifications]="getNotificationsForDay(day.date)"
+              [date]="day.date"
+              [settings]="timelineSettings()"
+              [compact]="true"
+              (onAddNotification)="onAddNotification(day.date, $event)"
+            />
+
+            @for (cap of getDailyCapsForDay(day.date); track cap.projectId) {
+              <div class="day-cap-lane">
+                <app-cap-progress-bar
+                  [pct]="cap.daily!.pct"
+                  [status]="cap.daily!.status"
+                  orientation="horizontal"
+                  width="100%"
+                  [centerLabel]="cap.companyInitials + ' cap: ' + cap.daily!.pct + '%'"
+                  [tooltip]="getDailyCapTooltip(cap)"
+                />
+              </div>
+            }
+
+            <div class="day-timers">
+              @for (timer of day.timers; track timer.id) {
+                <app-timer-card
+                  [timer]="timer"
+                  [compact]="expandedTimerId() !== timer.id"
+                  [expandable]="true"
+                  (onToggleExpand)="toggleExpand(timer.id)"
+                  (onStop)="stopTimer($event)"
+                  (onPause)="pauseTimer($event)"
+                  (onResume)="resumeTimer($event)"
+                  (onScheduleStop)="scheduleStopTimer($event)"
+                  (onTimeUpdate)="updateTimerTime($event)"
+                  (onDelete)="deleteTimer($event)"
+                  (onUpdate)="updateTimer($event)"
+                  (onMakeRecurring)="openRecurringFromTimer($event, day.date)"
+                />
+              } @empty {
+                <p class="empty-day">No timers</p>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    }
+  }
+</div>

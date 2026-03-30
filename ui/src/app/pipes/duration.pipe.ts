@@ -1,25 +1,15 @@
 import { Pipe, PipeTransform } from '@angular/core';
 
-@Pipe({ name: 'duration', standalone: true })
+@Pipe({ name: 'duration' })
 export class DurationPipe implements PipeTransform {
-  transform(ms: number | null | undefined, format: 'hm' | 'hms' | 'decimal' = 'hm'): string {
-    if (ms == null || ms < 0) return '0:00';
-    const totalSec = Math.floor(ms / 1000);
-    const h = Math.floor(totalSec / 3600);
-    const m = Math.floor((totalSec % 3600) / 60);
-    const s = totalSec % 60;
-
-    switch (format) {
-      case 'hms':
-        return `${h}:${pad(m)}:${pad(s)}`;
-      case 'decimal':
-        return (ms / 3600000).toFixed(2) + 'h';
-      default:
-        return `${h}:${pad(m)}`;
-    }
+  transform(ms: number | string | null | undefined): string {
+    const value = Number(ms);
+    if (!value || value <= 0) return '0m';
+    const totalMinutes = Math.floor(value / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours === 0) return `${minutes}m`;
+    if (minutes === 0) return `${hours}h`;
+    return `${hours}h ${minutes}m`;
   }
-}
-
-function pad(n: number): string {
-  return n < 10 ? `0${n}` : `${n}`;
 }

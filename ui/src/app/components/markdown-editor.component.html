@@ -1,0 +1,76 @@
+<div class="editor-wrapper" [style.height]="height">
+  <!-- Toolbar -->
+  <div class="editor-toolbar">
+    <div class="toolbar-group">
+      <button mat-icon-button matTooltip="Bold" (click)="toggleBold()" [disabled]="loading()">
+        <mat-icon>format_bold</mat-icon>
+      </button>
+      <button mat-icon-button matTooltip="Italic" (click)="toggleItalic()" [disabled]="loading()">
+        <mat-icon>format_italic</mat-icon>
+      </button>
+      <button mat-icon-button matTooltip="Strikethrough" (click)="toggleStrikethrough()" [disabled]="loading()">
+        <mat-icon>strikethrough_s</mat-icon>
+      </button>
+    </div>
+
+    <div class="toolbar-divider"></div>
+
+    <div class="toolbar-group">
+      <button mat-button [matMenuTriggerFor]="headingMenu" class="heading-dropdown"
+        [disabled]="loading()" matTooltip="Headings">
+        <span>H</span>
+        <mat-icon iconPositionEnd>arrow_drop_down</mat-icon>
+      </button>
+      <mat-menu #headingMenu="matMenu">
+        <button mat-menu-item (click)="toggleHeading(1)"><span class="heading-opt h1">Heading 1</span></button>
+        <button mat-menu-item (click)="toggleHeading(2)"><span class="heading-opt h2">Heading 2</span></button>
+        <button mat-menu-item (click)="toggleHeading(3)"><span class="heading-opt h3">Heading 3</span></button>
+      </mat-menu>
+      <button mat-icon-button matTooltip="Quote" (click)="toggleBlockquote()" [disabled]="loading()">
+        <mat-icon>format_quote</mat-icon>
+      </button>
+    </div>
+
+    <div class="toolbar-divider"></div>
+
+    <div class="toolbar-group">
+      <button mat-icon-button matTooltip="Bullet List" (click)="toggleBulletList()" [disabled]="loading()">
+        <mat-icon>format_list_bulleted</mat-icon>
+      </button>
+      <button mat-icon-button matTooltip="Numbered List" (click)="toggleOrderedList()" [disabled]="loading()">
+        <mat-icon>format_list_numbered</mat-icon>
+      </button>
+      <button mat-icon-button matTooltip="Task List" (click)="toggleTaskList()" [disabled]="loading()">
+        <mat-icon>checklist</mat-icon>
+      </button>
+    </div>
+
+    <div class="toolbar-divider"></div>
+
+    <div class="toolbar-group">
+      <button mat-icon-button matTooltip="Inline Code" (click)="toggleInlineCode()" [disabled]="loading()">
+        <mat-icon>code</mat-icon>
+      </button>
+      <button mat-icon-button matTooltip="Code Block" (click)="insertCodeBlock()" [disabled]="loading()">
+        <mat-icon>integration_instructions</mat-icon>
+      </button>
+      <button mat-icon-button matTooltip="Link" (click)="insertLink()" [disabled]="loading()">
+        <mat-icon>link</mat-icon>
+      </button>
+      <button mat-icon-button matTooltip="Horizontal Rule" (click)="insertHorizontalRule()" [disabled]="loading()">
+        <mat-icon>horizontal_rule</mat-icon>
+      </button>
+    </div>
+  </div>
+
+  <!-- Editor -->
+  <div class="editor-container">
+    @if (loading()) {
+      <div class="editor-loading">
+        <mat-spinner diameter="24"></mat-spinner>
+        <span>Loading editor…</span>
+      </div>
+    }
+    <div #editorRef [hidden]="loading()" class="milkdown-editor"></div>
+  </div>
+</div>

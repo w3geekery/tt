@@ -1,0 +1,288 @@
+.home-page {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.login-prompt {
+  text-align: center;
+  padding: 64px 24px;
+
+  p {
+    margin: 16px 0 24px;
+    color: var(--mat-sys-on-surface-variant);
+  }
+}
+
+// --- Current Timer Card ---
+
+.current-timer-card {
+  border-left: 4px solid #4caf50;
+  margin-bottom: 24px;
+}
+
+.timer-card-content-with-cap {
+  display: flex;
+  gap: 12px;
+}
+
+.timer-card-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.timer-hierarchy {
+  margin-bottom: 16px;
+}
+
+.chip-company {
+  --mdc-chip-elevated-container-color: var(--mat-sys-primary-container);
+}
+
+.timer-elapsed {
+  font-size: 3rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #4caf50;
+  text-align: center;
+  padding: 16px 0 8px;
+}
+
+.timer-started {
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--mat-sys-on-surface-variant);
+  margin-bottom: 16px;
+
+  .editable-time {
+    cursor: pointer;
+    border-bottom: 1px dashed var(--mat-sys-outline-variant);
+    padding: 0 2px;
+    border-radius: 2px;
+
+    &:hover {
+      background: var(--mat-sys-surface-container-highest);
+      border-bottom-color: var(--mat-sys-primary);
+    }
+  }
+
+  .inline-time-input {
+    font-size: 0.875rem;
+    border: 1px solid var(--mat-sys-primary);
+    border-radius: 4px;
+    padding: 2px 4px;
+    background: var(--mat-sys-surface);
+    color: var(--mat-sys-on-surface);
+    outline: none;
+    width: auto;
+  }
+}
+
+.timer-notes {
+  margin-bottom: 16px;
+
+  .notes-field {
+    width: 100%;
+  }
+
+  .notes-trigger {
+    width: 100%;
+    justify-content: flex-start;
+    color: var(--mat-sys-on-surface-variant);
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
+  }
+
+  .notes-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+}
+
+.timer-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.pause-btn {
+  --mdc-fab-container-color: var(--mat-sys-surface-container);
+  color: var(--mat-sys-on-surface);
+}
+
+.cap-bar-with-bell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  align-self: stretch;
+
+  app-cap-progress-bar {
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+.cap-bell-btn {
+  --mdc-icon-button-state-layer-size: 24px;
+  --mdc-icon-button-icon-size: 16px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}
+
+.cap-bell-icon {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+// --- No timer state ---
+
+.no-timer {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--mat-sys-on-surface-variant);
+
+  .no-timer-icon {
+    font-size: 64px;
+    width: 64px;
+    height: 64px;
+    opacity: 0.3;
+  }
+
+  p {
+    margin-top: 12px;
+    font-size: 1.1rem;
+  }
+}
+
+// --- Autocap Banner ---
+
+.autocap-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  background: var(--mat-sys-tertiary-container);
+  color: var(--mat-sys-on-tertiary-container);
+  border-radius: 12px;
+  font-size: 0.875rem;
+
+  > mat-icon {
+    color: var(--mat-sys-tertiary);
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+  }
+
+  .autocap-spacer {
+    flex: 1;
+  }
+
+  .autocap-btn {
+    white-space: nowrap;
+    font-size: 0.8rem;
+  }
+
+  .autocap-dismiss {
+    --mdc-icon-button-state-layer-size: 28px;
+    --mdc-icon-button-icon-size: 16px;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+  }
+}
+
+// --- New Timer Section ---
+
+.new-timer-section {
+  margin-bottom: 24px;
+}
+
+.new-timer-btn {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.new-timer-form {
+  .form-field {
+    width: 100%;
+    margin-bottom: 4px;
+  }
+
+  .form-actions {
+    display: flex;
+    align-items: center;
+    padding-top: 8px;
+
+    .spacer {
+      flex: 1;
+    }
+  }
+}
+
+// --- Template picker ---
+
+.template-picker {
+  margin-bottom: 16px;
+
+  h3 {
+    margin: 0 0 12px;
+    font-size: 0.875rem;
+    color: var(--mat-sys-on-surface-variant);
+  }
+}
+
+.template-btn {
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+  margin-bottom: 8px;
+  text-transform: none;
+  letter-spacing: normal;
+
+  .tpl-sep {
+    margin: 0 6px;
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  .tpl-company {
+    font-weight: 500;
+  }
+}
+
+.back-to-templates {
+  margin-bottom: 8px;
+}
+
+.switch-btn {
+  height: 40px;
+}
+
+.switch-picker {
+  margin-top: 16px;
+
+  h3 {
+    margin: 0 0 12px;
+    font-size: 0.875rem;
+    color: var(--mat-sys-on-surface-variant);
+  }
+}
+
+// --- Nav links ---
+
+.nav-links {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+.segments-toggle { display: flex; align-items: center; gap: 2px; font-size: 0.75rem; color: var(--mat-sys-primary); cursor: pointer; padding: 2px 0; user-select: none; margin-top: 8px; }
+.segments-toggle:hover { text-decoration: underline; }
+.segments-icon { font-size: 16px; width: 16px; height: 16px; }

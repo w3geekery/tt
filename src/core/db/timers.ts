@@ -198,6 +198,16 @@ export function getSegments(db: Database.Database, timerId: string): TimerSegmen
     .all(timerId) as TimerSegment[];
 }
 
+export function updateSegmentNotes(db: Database.Database, segmentId: string, notes: string | null): TimerSegment | undefined {
+  const segment = db.prepare('SELECT * FROM timer_segments WHERE id = ?').get(segmentId) as TimerSegment | undefined;
+  if (!segment) return undefined;
+
+  db.prepare(`UPDATE timer_segments SET notes = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(notes, segmentId);
+
+  return db.prepare('SELECT * FROM timer_segments WHERE id = ?').get(segmentId) as TimerSegment;
+}
+
 function createSegment(db: Database.Database, timerId: string, started: string): void {
   const id = randomUUID().replace(/-/g, '').toUpperCase();
   const now = new Date().toISOString();

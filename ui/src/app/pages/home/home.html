@@ -1,0 +1,257 @@
+<div class="home-page">
+  @if (auth.loading()) {
+    <app-skeleton width="100%" height="280px" radius="12px" />
+  } @else if (!auth.user()) {
+    <div class="login-prompt">
+      <h1>Time Tracker</h1>
+      <p>Sign in to view your timers.</p>
+      <button mat-raised-button color="primary" (click)="auth.login()">
+        Sign in with GitHub
+      </button>
+    </div>
+  } @else {
+    <!-- Current Timer Card -->
+    @if (loading()) {
+      <app-skeleton width="100%" height="280px" radius="12px" />
+    } @else if (currentTimer(); as timer) {
+      <mat-card class="current-timer-card">
+        <mat-card-content class="timer-card-content-with-cap">
+          <div class="timer-card-main">
+          <div class="timer-hierarchy">
+            <mat-chip-set>
+              @if (timer.company_name) {
+                <mat-chip [style.--mat-chip-elevated-container-color]="timer.company_color || 'var(--mat-sys-primary-container)'"
+                          [style.--mat-chip-label-text-color]="timer.company_color ? contrastColor(timer.company_color!) : ''">
+                  {{ timer.company_name }}
+                </mat-chip>
+              }
+              @if (timer.project_name) {
+                <mat-chip [style.--mat-chip-elevated-container-color]="timer.project_color || ''"
+                          [style.--mat-chip-label-text-color]="timer.project_color ? contrastColor(timer.project_color!) : ''">
+                  {{ timer.project_name }}
+                </mat-chip>
+              }
+              @if (timer.task_name) {
+                <mat-chip>{{ timer.task_name }}</mat-chip>
+              }
+            </mat-chip-set>
+          </div>
+
+          <div class="timer-elapsed">{{ liveDuration() }}</div>
+
+          <div class="timer-started">
+            @if (editingStartTime()) {
+              Started <input type="time" class="inline-time-input" [value]="editStartValue"
+                (change)="editStartValue = $any($event.target).value"
+                (blur)="saveStartTime()" (keydown.enter)="$any($event.target).blur()"
+                (keydown.escape)="editingStartTime.set(false)" />
+            } @else {
+              Started <span class="editable-time" (click)="startEditStartTime()">{{ formatTime(timer.started) }}</span>
+            }
+          </div>
+
+          <!-- Segments -->
+          @if (timer.segments && timer.segments.length > 1) {
+            <div class="segments-toggle" (click)="showSegments.set(!showSegments())">
+              <mat-icon class="segments-icon">{{ showSegments() ? 'expand_less' : 'expand_more' }}</mat-icon>
+              <span>{{ timer.segments.length }} segments</span>
+            </div>
+            @if (showSegments()) {
+              <app-segment-list [segments]="timer.segments" />
+            }
+          }
+
+          <!-- Inline notes -->
+          <div class="timer-notes">
+            <app-markdown-note-editor
+              [notes]="timer.notes ?? ''"
+              (notesChanged)="saveNotesInline($event)"
+            />
+          </div>
+
+          <!-- Timer controls -->
+          <div class="timer-controls">
+            <app-stop-timer-menu
+              [timerId]="timer.id"
+              (onStopNow)="stopTimer()"
+              (onScheduleStop)="scheduleStop($event)"
+            />
+            <button mat-stroked-button color="primary" (click)="showSwitchPicker.set(!showSwitchPicker())" title="Switch Task" class="switch-btn">
+              <mat-icon>swap_horiz</mat-icon> Switch
+            </button>
+          </div>
+
+          <!-- Switch to template -->
+          @if (showSwitchPicker()) {
+            <div class="switch-picker">
+              <h3>Switch to...</h3>
+              @for (tpl of templates(); track tpl.company_id + '-' + tpl.project_id + '-' + tpl.task_id) {
+                <button mat-stroked-button class="template-btn" (click)="switchToTemplate(tpl)">
+                  <span class="tpl-company">{{ tpl.company_name }}</span>
+                  @if (tpl.project_name) { <span class="tpl-sep">›</span> <span>{{ tpl.project_name }}</span> }
+                  @if (tpl.task_name) { <span class="tpl-sep">›</span> <span>{{ tpl.task_name }}</span> }
+                </button>
+              }
+            </div>
+          }
+          </div>
+          @if (capStatus()) {
+            <div class="cap-bar-with-bell">
+              <app-cap-progress-bar
+                [pct]="capPct()"
+                [status]="capBarStatus()"
+                orientation="vertical"
+                [label]="capPct() + '%'"
+                [tooltip]="capTooltip()"
+              />
+              <button mat-icon-button class="cap-bell-btn" (click)="toggleProjectCapNotification()"
+                [title]="projectNotifyOnCap() ? 'Cap alerts enabled (click to disable)' : 'Cap alerts disabled (click to enable)'">
+                <mat-icon class="cap-bell-icon">{{ projectNotifyOnCap() ? 'notifications_active' : 'notifications_off' }}</mat-icon>
+              </button>
+            </div>
+          }
+        </mat-card-content>
+      </mat-card>
+    }
+
+    <!-- Autocap suggestion banner -->
+    @if (autocapSuggestion(); as cap) {
+      <div class="autocap-banner">
+        <mat-icon>schedule</mat-icon>
+        <span>ZeroBias 4h cap at <strong>{{ formatTime(cap.switchTime.toISOString()) }}</strong></span>
+        <span class="autocap-spacer"></span>
+        <button mat-stroked-button color="primary" (click)="createAutocap()" class="autocap-btn">
+          <mat-icon>swap_horiz</mat-icon> Set auto-switch
+        </button>
+        <button mat-icon-button (click)="dismissAutocap()" class="autocap-dismiss">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+    }
+
+    @if (!currentTimer() && !loading()) {
+      <div class="no-timer">
+        <mat-icon class="no-timer-icon">timer_off</mat-icon>
+        <p>No timer running</p>
+      </div>
+    }
+
+    <!-- New Timer Button + Inline Form -->
+    <div class="new-timer-section">
+      <button mat-fab extended color="primary" (click)="toggleNewForm()" class="new-timer-btn">
+        <mat-icon>{{ showNewForm() ? 'close' : 'add' }}</mat-icon>
+        {{ showNewForm() ? 'Cancel' : 'New Timer' }}
+      </button>
+
+      @if (showNewForm()) {
+        <!-- Template quick-pick -->
+        @if (!showFullForm() && templates().length > 0) {
+          <div class="template-picker">
+            <h3>Quick Start</h3>
+            @for (tpl of templates(); track tpl.company_id + '-' + tpl.project_id + '-' + tpl.task_id) {
+              <button mat-stroked-button class="template-btn" (click)="startFromTemplate(tpl)">
+                <span class="tpl-company">{{ tpl.company_name }}</span>
+                @if (tpl.project_name) { <span class="tpl-sep">›</span> <span>{{ tpl.project_name }}</span> }
+                @if (tpl.task_name) { <span class="tpl-sep">›</span> <span>{{ tpl.task_name }}</span> }
+              </button>
+            }
+            <button mat-button (click)="showFullForm.set(true)">
+              <mat-icon>add</mat-icon> New combination...
+            </button>
+          </div>
+        }
+
+        <!-- Full form (shown when no templates or user clicks "New combination") -->
+        @if (showFullForm() || templates().length === 0) {
+          <mat-card class="new-timer-form">
+            <mat-card-content>
+              @if (templates().length > 0) {
+                <button mat-button (click)="showFullForm.set(false)" class="back-to-templates">
+                  <mat-icon>arrow_back</mat-icon> Back to templates
+                </button>
+              }
+
+              <mat-form-field class="form-field">
+                <mat-label>Company</mat-label>
+                <mat-select [ngModel]="newCompanyId()" (ngModelChange)="onNewCompanyChange($event)" required>
+                  @for (company of companies(); track company.id) {
+                    <mat-option [value]="company.id">{{ company.name }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field class="form-field">
+                <mat-label>Project</mat-label>
+                <mat-select [ngModel]="newProjectId()" (ngModelChange)="onNewProjectChange($event)">
+                  <mat-option [value]="null">None</mat-option>
+                  @for (project of filteredProjects(); track project.id) {
+                    <mat-option [value]="project.id">{{ project.name }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field class="form-field">
+                <mat-label>Task</mat-label>
+                <mat-select [(ngModel)]="newTaskId">
+                  <mat-option [value]="null">None</mat-option>
+                  @for (task of filteredTasks(); track task.id) {
+                    <mat-option [value]="task.id">{{ task.name }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field class="form-field">
+                <mat-label>Notes</mat-label>
+                <textarea matInput [(ngModel)]="newNotes" rows="2"></textarea>
+              </mat-form-field>
+
+              @if (showSchedule()) {
+                <mat-form-field class="form-field">
+                  <mat-label>Start Time</mat-label>
+                  <input matInput type="datetime-local" [(ngModel)]="scheduleStart" />
+                </mat-form-field>
+              }
+
+              <div class="form-actions">
+                <button mat-button (click)="toggleSchedule()">
+                  <mat-icon>schedule</mat-icon>
+                  {{ showSchedule() ? 'Hide Schedule' : 'Schedule' }}
+                </button>
+                <span class="spacer"></span>
+                @if (showSchedule() && scheduleStart) {
+                  <button mat-raised-button color="primary"
+                    [disabled]="!newCompanyId()"
+                    (click)="saveScheduledEntry()">
+                    Save
+                  </button>
+                } @else {
+                  <button mat-raised-button color="primary"
+                    [disabled]="!newCompanyId()"
+                    (click)="startNewTimer()">
+                    {{ currentTimer() ? 'Switch' : 'Start' }}
+                  </button>
+                }
+              </div>
+            </mat-card-content>
+          </mat-card>
+        }
+      }
+    </div>
+
+    <!-- Navigation links -->
+    <div class="nav-links">
+      <a mat-button routerLink="/today">
+        <mat-icon>list</mat-icon>
+        Today
+      </a>
+      <a mat-button routerLink="/weekly">
+        <mat-icon>view_week</mat-icon>
+        Weekly
+      </a>
+      <a mat-button routerLink="/monthly">
+        <mat-icon>calendar_month</mat-icon>
+        Monthly
+      </a>
+    </div>
+  }
+</div>

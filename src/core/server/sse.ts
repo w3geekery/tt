@@ -3,6 +3,10 @@
  *
  * Clients connect to GET /api/sse and receive real-time updates
  * when timers change, caps are hit, etc.
+ *
+ * The old timetracker-ui expects messages in the format:
+ * data: { "type": "timer-updated", "data": {...} }
+ * as a single "message" event (not named events).
  */
 
 import type { Request, Response } from 'express';
@@ -21,8 +25,9 @@ export function sseHandler(_req: Request, res: Response): void {
   res.on('close', () => clients.delete(res));
 }
 
-export function broadcast(event: string, data: unknown): void {
-  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+export function broadcast(_event: string, data: any): void {
+  // Ignore event name, always send as "message" event with wrapped data
+  const payload = `data: ${JSON.stringify(data)}\n\n`;
   for (const client of clients) {
     client.write(payload);
   }

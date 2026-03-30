@@ -1,66 +1,54 @@
-import { Injectable, NgZone, inject } from '@angular/core';
-import { Subject, Observable } from 'rxjs';
-import { filter, map } from 'rxjs/operators';
+import { Injectable, PLATFORM_ID, inject, OnDestroy } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Subject } from 'rxjs';
 
-export interface SseEvent {
-  type: string;
+export interface TimerEvent {
+  type: 'timer-created' | 'timer-updated' | 'timer-deleted';
   data: unknown;
 }
 
 @Injectable({ providedIn: 'root' })
-export class SseService {
-  private zone = inject(NgZone);
-  private events$ = new Subject<SseEvent>();
-  private source: EventSource | null = null;
+export class SseService implements OnDestroy {
+  private platformId = inject(PLATFORM_ID);
+  private eventSource: EventSource | null = null;
+
+  /** Emits whenever the server broadcasts a timer change. */
+  readonly timerEvents$ = new Subject<TimerEvent>();
 
   connect(): void {
-    if (this.source) return;
+    if (!isPlatformBrowser(this.platformId)) return;
+    if (this.eventSource) return;
 
-    this.zone.runOutsideAngular(() => {
-      this.source = new EventSource('/api/sse');
+    this.eventSource = new EventSource('/api/sse');
 
-      const eventTypes = [
-        'timer:created', 'timer:updated', 'timer:started', 'timer:stopped',
-        'timer:paused', 'timer:resumed', 'timer:deleted',
-        'company:created', 'company:updated', 'company:deleted',
-        'project:created', 'project:updated', 'project:deleted',
-        'task:created', 'task:updated', 'task:deleted',
-        'notification:created', 'notification:fired', 'notification:dismissed',
-        'recurring:created', 'recurring:updated', 'recurring:deleted',
-      ];
-
-      for (const type of eventTypes) {
-        this.source!.addEventListener(type, (event: MessageEvent) => {
-          this.zone.run(() => {
-            this.events$.next({ type, data: JSON.parse(event.data) });
-          });
-        });
+    this.eventSource.onmessage = (event) => {
+      try {
+        const parsed = JSON.parse(event.data) as TimerEvent;
+        this.timerEvents$.next(parsed);
+      } catch {
+        // Ignore malformed messages (e.g. heartbeat comments)
       }
+    };
 
-      this.source!.onerror = () => {
-        this.source?.close();
-        this.source = null;
-        // Reconnect after 3 seconds
-        setTimeout(() => this.connect(), 3000);
-      };
-    });
+    this.eventSource.onerror = () => {
+      // EventSource auto-reconnects; nothing to do here
+    };
+  }
+
+  /** Emit a synthetic event to trigger all subscribers to reload. */
+  refresh(): void {
+    this.timerEvents$.next({ type: 'timer-updated', data: null });
   }
 
   disconnect(): void {
-    this.source?.close();
-    this.source = null;
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
   }
 
-  on<T = unknown>(eventType: string): Observable<T> {
-    return this.events$.pipe(
-      filter(e => e.type === eventType),
-      map(e => e.data as T),
-    );
-  }
-
-  onTimerChange(): Observable<unknown> {
-    return this.events$.pipe(
-      filter(e => e.type.startsWith('timer:')),
-    );
+  ngOnDestroy(): void {
+    this.disconnect();
+    this.timerEvents$.complete();
   }
 }

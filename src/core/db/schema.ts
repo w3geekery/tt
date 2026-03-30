@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS recurring_timers (
   company_id TEXT NOT NULL REFERENCES companies(id),
   project_id TEXT REFERENCES projects(id),
   task_id TEXT REFERENCES tasks(id),
-  pattern TEXT NOT NULL CHECK (pattern IN ('daily', 'weekly')),
+  pattern TEXT NOT NULL CHECK (pattern IN ('daily', 'weekdays', 'weekly')),
   weekday INTEGER,
   start_time TEXT,
   start_date TEXT NOT NULL,
