@@ -4,12 +4,22 @@
  */
 
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import type Database from 'better-sqlite3';
 import * as timersDb from '../db/timers.js';
 
 const STATE_PATH = resolve(homedir(), '.tt', 'state.json');
+
+function isPortListening(port: number): boolean {
+  try {
+    execSync(`lsof -ti:${port}`, { stdio: 'pipe' });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export interface StateFile {
   running: {
@@ -22,12 +32,18 @@ export interface StateFile {
     elapsed_ms: number;
   } | null;
   today_total_ms: number;
+  server: {
+    heartbeat: string;
+    pid: number;
+    api_up: boolean;
+    ui_up: boolean;
+  };
   updated_at: string;
 }
 
 export function syncState(db: Database.Database): void {
   const running = timersDb.findRunning(db);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
   const todayTimers = timersDb.findByDate(db, today);
   const todayTotalMs = todayTimers.reduce((sum, t) => sum + (t.duration_ms ?? 0), 0);
 
@@ -42,6 +58,12 @@ export function syncState(db: Database.Database): void {
       elapsed_ms: running.started ? Date.now() - new Date(running.started).getTime() : 0,
     } : null,
     today_total_ms: todayTotalMs,
+    server: {
+      heartbeat: new Date().toISOString(),
+      pid: process.pid,
+      api_up: true, // If we're writing state, API is up
+      ui_up: isPortListening(4302),
+    },
     updated_at: new Date().toISOString(),
   };
 

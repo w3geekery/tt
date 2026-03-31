@@ -99,6 +99,12 @@ CREATE TABLE IF NOT EXISTS specstory_sessions (
   ended TEXT,
   size_bytes INTEGER NOT NULL,
   summary TEXT,
+  goal TEXT,
+  outcome TEXT,
+  user_messages INTEGER,
+  agent_messages INTEGER,
+  commits TEXT DEFAULT '[]',
+  pr_urls TEXT DEFAULT '[]',
   cached_at TEXT DEFAULT (datetime('now'))
 );
 

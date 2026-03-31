@@ -17,7 +17,7 @@ notificationsRouter.get('/', (req: Request, res: Response) => {
   if (date) {
     const dateStr = date as string;
     notifications = notifications.filter(n => {
-      const nDate = new Date(n.trigger_at).toISOString().split('T')[0];
+      const nDate = new Date(n.trigger_at).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
       return nDate === dateStr;
     });
   }

@@ -62,18 +62,19 @@ function getCapStatus(logged: number, cap: number): CapDetail | null {
 // GET /api/cap-status?date=X
 capStatusRouter.get('/', (req: Request, res: Response) => {
   const db = getDb();
-  const dateStr = (req.query.date as string) || new Date().toISOString().split('T')[0];
-  const date = new Date(dateStr);
+  const dateStr = (req.query.date as string) || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+  const date = new Date(dateStr + 'T12:00:00'); // noon to avoid DST edge cases
 
   // Calculate week start (Monday) and end (Sunday)
   const dayOfWeek = date.getDay();
   const diff = date.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // adjust when day is Sunday
-  const weekStart = new Date(date.setDate(diff));
+  const weekStart = new Date(date);
+  weekStart.setDate(diff);
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekEnd.getDate() + 6);
 
-  const weekStartStr = weekStart.toISOString().split('T')[0];
-  const weekEndStr = weekEnd.toISOString().split('T')[0];
+  const weekStartStr = weekStart.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+  const weekEndStr = weekEnd.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
 
   // Query all capped projects
   const query = `

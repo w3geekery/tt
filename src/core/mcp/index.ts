@@ -9,6 +9,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { getDb } from '../db/connection.js';
 import * as companiesDb from '../db/companies.js';
 import * as projectsDb from '../db/projects.js';
@@ -16,8 +19,13 @@ import * as tasksDb from '../db/tasks.js';
 import * as timersDb from '../db/timers.js';
 import * as recurringDb from '../db/recurring.js';
 import * as notificationsDb from '../db/notifications.js';
+import * as specstoryDb from '../db/specstory.js';
 import { loadExtensions, runHook } from '../extensions.js';
 import config from '../../../tt.config.js';
+
+// Pacific Time helpers — all date defaults must use PT, not UTC
+const ptDate = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+const ptMonth = () => ptDate().slice(0, 7);
 
 // Initialize DB and extensions
 getDb(config.db);
@@ -146,7 +154,7 @@ server.tool('daily_summary', 'Get a summary of time tracked today or for a speci
   date: z.string().optional().describe('Date (YYYY-MM-DD, defaults to today)'),
 }, async ({ date }) => {
   const db = getDb();
-  const dateStr = date ?? new Date().toISOString().slice(0, 10);
+  const dateStr = date ?? ptDate();
   const rows = db.prepare(`
     SELECT t.*, c.name as company_name, p.name as project_name
     FROM timers t
@@ -193,7 +201,7 @@ server.tool('monthly_summary', 'Get a summary of time tracked this month.', {
   month: z.string().optional().describe('Month (YYYY-MM, defaults to current)'),
 }, async ({ month }) => {
   const db = getDb();
-  const monthStr = month ?? new Date().toISOString().slice(0, 7);
+  const monthStr = month ?? ptMonth();
   const rows = db.prepare(`
     SELECT c.name as company_name, p.name as project_name,
            SUM(t.duration_ms) as total_ms, COUNT(*) as timer_count
@@ -575,6 +583,105 @@ server.tool('set_timeline_hours', 'Set the timeline display hour range.', {
 }, async ({ start_hour, end_hour }) => {
   // Timeline settings will be stored in a future settings table
   return { content: [{ type: 'text', text: `Timeline set to ${start_hour}:00 — ${end_hour}:00` }] };
+});
+
+// --- SpecStory Sessions ---
+
+server.tool('list_sessions', 'List cached SpecStory sessions by date, date range, or repo.', {
+  date: z.string().optional().describe('Single date (YYYY-MM-DD)'),
+  date_from: z.string().optional().describe('Range start (YYYY-MM-DD)'),
+  date_to: z.string().optional().describe('Range end (YYYY-MM-DD)'),
+  repo: z.string().optional().describe('Filter by repo name'),
+}, async ({ date, date_from, date_to, repo }) => {
+  const db = getDb(config.db);
+  let sessions;
+  if (date) {
+    sessions = specstoryDb.findByDate(db, date);
+  } else if (date_from && date_to) {
+    sessions = specstoryDb.findByDateRange(db, date_from, date_to);
+  } else if (repo) {
+    sessions = specstoryDb.findByRepo(db, repo);
+  } else {
+    // Default: today
+    const today = ptDate();
+    sessions = specstoryDb.findByDate(db, today);
+  }
+  return { content: [{ type: 'text' as const, text: JSON.stringify(sessions, null, 2) }] };
+});
+
+server.tool('scan_sessions', 'Run the SpecStory scanner for a date/range and cache results to SQLite.', {
+  date: z.string().describe('Date or period: YYYY-MM-DD, today, yesterday, week, last-week'),
+  end_date: z.string().optional().describe('End date for range (YYYY-MM-DD)'),
+}, async ({ date, end_date }) => {
+  const { execSync } = await import('node:child_process');
+  const args = end_date ? `${date} ${end_date}` : date;
+  try {
+    const output = execSync(
+      `python3 ~/.claude/timetracker/specstory-scan.py ${args}`,
+      { timeout: 60000, encoding: 'utf-8' },
+    );
+    return { content: [{ type: 'text' as const, text: output }] };
+  } catch (err: unknown) {
+    return { content: [{ type: 'text' as const, text: `Scan failed: ${err instanceof Error ? err.message : err}` }] };
+  }
+});
+
+// --- Dev Server Management ---
+
+server.tool('server_status', 'Check if the tt dev server (API + UI) is running. Reads heartbeat from state.json.', {}, async () => {
+  const statePath = resolve(homedir(), '.tt', 'state.json');
+  try {
+    const raw = readFileSync(statePath, 'utf-8');
+    const state = JSON.parse(raw);
+    const hb = state.server?.heartbeat;
+    const age = hb ? Math.round((Date.now() - new Date(hb).getTime()) / 1000) : null;
+    const fresh = age !== null && age < 60;
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          status: fresh ? 'running' : 'stopped',
+          api_up: fresh && (state.server?.api_up ?? false),
+          ui_up: fresh && (state.server?.ui_up ?? false),
+          pid: state.server?.pid ?? null,
+          heartbeat: hb ?? null,
+          heartbeat_age_sec: age,
+        }, null, 2),
+      }],
+    };
+  } catch {
+    return { content: [{ type: 'text' as const, text: JSON.stringify({ status: 'stopped', api_up: false, ui_up: false }) }] };
+  }
+});
+
+server.tool('server_start', 'Start the tt dev server (Express API + Angular UI).', {}, async () => {
+  const { execSync } = await import('node:child_process');
+  try {
+    execSync('bash /Users/cstacer/Projects/w3geekery/tt/scripts/dev-server.sh start', { timeout: 35000 });
+    return { content: [{ type: 'text' as const, text: 'Dev server started. Check server_status for details.' }] };
+  } catch (err: unknown) {
+    return { content: [{ type: 'text' as const, text: `Failed to start: ${err instanceof Error ? err.message : err}` }] };
+  }
+});
+
+server.tool('server_stop', 'Stop the tt dev server.', {}, async () => {
+  const { execSync } = await import('node:child_process');
+  try {
+    execSync('bash /Users/cstacer/Projects/w3geekery/tt/scripts/dev-server.sh stop', { timeout: 10000 });
+    return { content: [{ type: 'text' as const, text: 'Dev server stopped.' }] };
+  } catch (err: unknown) {
+    return { content: [{ type: 'text' as const, text: `Failed to stop: ${err instanceof Error ? err.message : err}` }] };
+  }
+});
+
+server.tool('server_restart', 'Restart the tt dev server (kills stale processes, starts fresh).', {}, async () => {
+  const { execSync } = await import('node:child_process');
+  try {
+    execSync('bash /Users/cstacer/Projects/w3geekery/tt/scripts/dev-server.sh restart', { timeout: 40000 });
+    return { content: [{ type: 'text' as const, text: 'Dev server restarted. Check server_status for details.' }] };
+  } catch (err: unknown) {
+    return { content: [{ type: 'text' as const, text: `Failed to restart: ${err instanceof Error ? err.message : err}` }] };
+  }
 });
 
 // --- Start server ---

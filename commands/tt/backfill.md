@@ -28,31 +28,21 @@ For each date in the requested range:
 
 ### Step 1: Load Sessions from SQLite Cache
 
-Query the SpecStory session cache in SQLite:
-```sql
-SELECT path, repo, company, started, ended, summary
-FROM specstory_sessions
-WHERE date(started) = date('YYYY-MM-DD')
-ORDER BY started
+Query the SpecStory session cache via MCP:
+
+```
+mcp__tt__list_sessions({ date: "YYYY-MM-DD" })
 ```
 
-Use: `sqlite3 ~/.tt/tt.db "<query>"`
+Each session includes: `path`, `repo`, `company`, `started`, `summary`, `goal`, `outcome`, `commits` (JSON array), `pr_urls` (JSON array), `user_messages`, `agent_messages`.
 
 **If no cached sessions**, run the scanner first:
-```bash
-python3 ~/.claude/timetracker/specstory-scan.py YYYY-MM-DD
 ```
-Then read each discovered session, summarize it, and upsert into the cache:
-```sql
-INSERT INTO specstory_sessions (path, repo, company, started, ended, size_bytes, summary, cached_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-ON CONFLICT(path) DO UPDATE SET summary=excluded.summary, size_bytes=excluded.size_bytes, cached_at=datetime('now')
+mcp__tt__scan_sessions({ date: "YYYY-MM-DD" })
 ```
+Then re-query with `list_sessions`. The scanner discovers sessions, extracts metadata, and upserts to SQLite automatically.
 
-Also gather git commits for the date:
-```bash
-git -C <repo-path> log --after="YYYY-MM-DDT00:00:00" --before="YYYY-MM-DDT23:59:59" --format="%h %s" --no-merges
-```
+**Commits and PRs are pre-cached** — no need for separate `git log` calls. Use the `commits` and `pr_urls` fields from the session data.
 
 ### Step 2: Fetch Timers
 

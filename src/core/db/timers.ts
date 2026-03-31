@@ -48,8 +48,13 @@ export function findRunning(db: Database.Database): Timer | undefined {
 
 export function findByDate(db: Database.Database, dateStr: string): Timer[] {
   return db
-    .prepare("SELECT * FROM timers WHERE date(started) = date(?) ORDER BY started")
-    .all(dateStr)
+    .prepare(
+      `SELECT * FROM timers
+       WHERE date(started) = date(?)
+          OR (started IS NULL AND substr(created_at, 1, 10) = ?)
+       ORDER BY started`,
+    )
+    .all(dateStr, dateStr)
     .map(mapTimer);
 }
 

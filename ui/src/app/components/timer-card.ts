@@ -64,13 +64,17 @@ import { ApiService } from '../services/api.service';
         @if (isScheduled()) {
           <div class="timer-duration scheduled-label">
             <mat-icon class="scheduled-icon">schedule</mat-icon>
-            @if (editingScheduledTime()) {
-              <input type="time" class="inline-time-input scheduled-time-input" [value]="editScheduledValue"
-                (change)="editScheduledValue = $any($event.target).value"
-                (blur)="saveScheduledTime()" (keydown.enter)="$any($event.target).blur()"
-                (keydown.escape)="editingScheduledTime.set(false)" (click)="$event.stopPropagation()" />
+            @if (timer().start_at) {
+              @if (editingScheduledTime()) {
+                <input type="time" class="inline-time-input scheduled-time-input" [value]="editScheduledValue"
+                  (change)="editScheduledValue = $any($event.target).value"
+                  (blur)="saveScheduledTime()" (keydown.enter)="$any($event.target).blur()"
+                  (keydown.escape)="editingScheduledTime.set(false)" (click)="$event.stopPropagation()" />
+              } @else {
+                <span class="editable-time" (click)="startEditScheduledTime(); $event.stopPropagation()">{{ formatTime(timer().start_at) }}</span>
+              }
             } @else {
-              <span class="editable-time" (click)="startEditScheduledTime(); $event.stopPropagation()">{{ formatTime(timer().start_at) }}</span>
+              <span>Pending</span>
             }
           </div>
         } @else {
@@ -83,7 +87,7 @@ import { ApiService } from '../services/api.service';
         @if (isScheduled()) {
           <div class="timer-times">
             <span class="time-range">
-              {{ timer().recurring_id ? 'Recurring' : 'Scheduled' }} for {{ formatTime(timer().start_at) }}
+              {{ timer().recurring_id ? 'Recurring' : 'Scheduled' }}{{ timer().start_at ? ' for ' + formatTime(timer().start_at) : '' }}
               <span> — </span>
               @if (editingEndTime()) {
                 <input type="time" class="inline-time-input" [value]="editEndValue"
@@ -353,7 +357,7 @@ export class TimerCardComponent implements OnInit, OnDestroy {
   }
 
   isScheduled() {
-    return !!this.timer().start_at && !this.timer().started;
+    return !this.timer().started && this.timer().state === 'stopped';
   }
 
   hasMultipleSegments(): boolean {

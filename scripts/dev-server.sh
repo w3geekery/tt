@@ -1,0 +1,112 @@
+#!/bin/bash
+# tt dev server control — start/stop/status
+# Used by launchd (com.w3geekery.tt-dev) and manual invocation.
+
+# Ensure node/npm are on PATH (launchd has minimal PATH, nvm not sourced)
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
+
+TT_DIR="/Users/cstacer/Projects/w3geekery/tt"
+API_PORT=4301
+UI_PORT=4302
+LOG_FILE="/tmp/tt-dev.log"
+PID_FILE="$HOME/.tt/dev-server.pid"
+
+kill_port() {
+  local port=$1
+  local pids
+  pids=$(lsof -ti:"$port" 2>/dev/null)
+  if [ -n "$pids" ]; then
+    echo "Killing processes on port $port: $pids"
+    echo "$pids" | xargs kill -TERM 2>/dev/null
+    sleep 2
+    # Force kill any survivors
+    pids=$(lsof -ti:"$port" 2>/dev/null)
+    if [ -n "$pids" ]; then
+      echo "Force killing survivors on port $port: $pids"
+      echo "$pids" | xargs kill -9 2>/dev/null
+    fi
+  fi
+}
+
+do_start() {
+  # Check if already running
+  if lsof -ti:$API_PORT &>/dev/null; then
+    echo "Server already running on port $API_PORT"
+    exit 0
+  fi
+
+  # Clean up stale ports
+  kill_port $API_PORT
+  kill_port $UI_PORT
+
+  # Start the dev server
+  cd "$TT_DIR" || exit 1
+  export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
+  nohup npm run dev >> "$LOG_FILE" 2>&1 &
+  local pid=$!
+  echo "$pid" > "$PID_FILE"
+  echo "Started dev server (PID $pid), logging to $LOG_FILE"
+
+  # Wait for API to be ready
+  for i in $(seq 1 30); do
+    if curl -s "http://localhost:$API_PORT/api/auth/me" &>/dev/null; then
+      echo "API ready on port $API_PORT"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "Warning: API not ready after 30s"
+}
+
+do_stop() {
+  # Try PID file first
+  if [ -f "$PID_FILE" ]; then
+    local pid
+    pid=$(cat "$PID_FILE")
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "Stopping dev server (PID $pid)"
+      kill -TERM "$pid" 2>/dev/null
+      sleep 2
+    fi
+    rm -f "$PID_FILE"
+  fi
+
+  # Kill anything still on the ports
+  kill_port $API_PORT
+  kill_port $UI_PORT
+  echo "Dev server stopped"
+}
+
+do_status() {
+  local api_up=false ui_up=false
+  lsof -ti:$API_PORT &>/dev/null && api_up=true
+  lsof -ti:$UI_PORT &>/dev/null && ui_up=true
+
+  if $api_up && $ui_up; then
+    echo "running (API:$API_PORT UI:$UI_PORT)"
+    exit 0
+  elif $api_up; then
+    echo "partial (API:$API_PORT up, UI:$UI_PORT down)"
+    exit 1
+  else
+    echo "stopped"
+    exit 1
+  fi
+}
+
+case "${1:-status}" in
+  start)  do_start ;;
+  stop)   do_stop ;;
+  status) do_status ;;
+  restart)
+    do_stop
+    sleep 1
+    do_start
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|status|restart}"
+    exit 1
+    ;;
+esac
