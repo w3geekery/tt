@@ -22,12 +22,21 @@ export function sseHandler(_req: Request, res: Response): void {
   res.write('\n');
 
   clients.add(res);
-  res.on('close', () => clients.delete(res));
+  res.on('close', () => {
+    clients.delete(res);
+    if (keepaliveTimer) clearInterval(keepaliveTimer);
+  });
+
+  // Keepalive every 30s to prevent connection timeout
+  const keepaliveTimer = setInterval(() => {
+    res.write(': keepalive\n\n');
+  }, 30_000);
 }
 
-export function broadcast(_event: string, data: any): void {
-  // Ignore event name, always send as "message" event with wrapped data
-  const payload = `data: ${JSON.stringify(data)}\n\n`;
+export function broadcast(event: string, data: any): void {
+  // Include event type in payload for richer client-side handling
+  // Backward compatible — old clients use data.type, new clients can also use event field
+  const payload = `data: ${JSON.stringify({ ...data, event })}\n\n`;
   for (const client of clients) {
     client.write(payload);
   }

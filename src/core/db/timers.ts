@@ -3,6 +3,13 @@ import type { Timer, TimerSegment } from '../types.js';
 import { randomUUID } from 'node:crypto';
 import { generateSlug } from './slug.js';
 
+/** Round an ISO timestamp to the nearest 15 minutes. */
+function roundTo15(iso: string): string {
+  const ms = new Date(iso).getTime();
+  const fifteen = 15 * 60 * 1000;
+  return new Date(Math.round(ms / fifteen) * fifteen).toISOString();
+}
+
 export interface CreateTimerInput {
   company_id: string;
   project_id?: string | null;
@@ -20,6 +27,8 @@ export interface UpdateTimerInput {
   task_id?: string | null;
   start_at?: string | null;
   stop_at?: string | null;
+  started?: string | null;
+  ended?: string | null;
   notes?: string | null;
   notify_on_switch?: boolean;
   external_task?: Record<string, unknown> | null;
@@ -92,6 +101,8 @@ export function update(db: Database.Database, id: string, input: UpdateTimerInpu
   if (input.task_id !== undefined) { fields.push('task_id = ?'); values.push(input.task_id); }
   if (input.start_at !== undefined) { fields.push('start_at = ?'); values.push(input.start_at); }
   if (input.stop_at !== undefined) { fields.push('stop_at = ?'); values.push(input.stop_at); }
+  if (input.started !== undefined) { fields.push('started = ?'); values.push(input.started ? roundTo15(input.started) : null); }
+  if (input.ended !== undefined) { fields.push('ended = ?'); values.push(input.ended ? roundTo15(input.ended) : null); }
   if (input.notes !== undefined) { fields.push('notes = ?'); values.push(input.notes); }
   if (input.notify_on_switch !== undefined) { fields.push('notify_on_switch = ?'); values.push(input.notify_on_switch ? 1 : 0); }
   if (input.external_task !== undefined) { fields.push('external_task = ?'); values.push(input.external_task ? JSON.stringify(input.external_task) : null); }
@@ -117,7 +128,8 @@ export function start(db: Database.Database, id: string): Timer {
   if (!timer) throw new Error(`Timer ${id} not found`);
   if (timer.state === 'running') return timer;
 
-  const now = new Date().toISOString();
+  const exactNow = new Date().toISOString();
+  const roundedNow = roundTo15(exactNow);
 
   // Stop any currently running timer first
   const running = findRunning(db);
@@ -125,12 +137,12 @@ export function start(db: Database.Database, id: string): Timer {
     stop(db, running.id);
   }
 
+  // Timer-level started uses rounded time; segment uses exact time
   db.prepare(
     `UPDATE timers SET state = 'running', started = COALESCE(started, ?), updated_at = ? WHERE id = ?`,
-  ).run(now, now, id);
+  ).run(roundedNow, exactNow, id);
 
-  // Create a new segment
-  createSegment(db, id, now);
+  createSegment(db, id, exactNow);
 
   return findById(db, id)!;
 }
@@ -140,17 +152,19 @@ export function stop(db: Database.Database, id: string): Timer {
   if (!timer) throw new Error(`Timer ${id} not found`);
   if (timer.state === 'stopped') return timer;
 
-  const now = new Date().toISOString();
+  const exactNow = new Date().toISOString();
+  const roundedNow = roundTo15(exactNow);
 
-  // Close open segment
-  closeOpenSegment(db, id, now);
+  // Close open segment with exact time
+  closeOpenSegment(db, id, exactNow);
 
   // Calculate total duration from all segments
   const totalMs = getTotalDuration(db, id);
 
+  // Timer-level ended uses rounded time
   db.prepare(
     `UPDATE timers SET state = 'stopped', ended = ?, duration_ms = ?, updated_at = ? WHERE id = ?`,
-  ).run(now, totalMs, now, id);
+  ).run(roundedNow, totalMs, exactNow, id);
 
   return findById(db, id)!;
 }
@@ -213,6 +227,34 @@ export function updateSegmentNotes(db: Database.Database, segmentId: string, not
   return db.prepare('SELECT * FROM timer_segments WHERE id = ?').get(segmentId) as TimerSegment;
 }
 
+export function updateSegment(db: Database.Database, segmentId: string, input: { started?: string; ended?: string; notes?: string | null }): TimerSegment | undefined {
+  const segment = db.prepare('SELECT * FROM timer_segments WHERE id = ?').get(segmentId) as TimerSegment | undefined;
+  if (!segment) return undefined;
+
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (input.started !== undefined) { fields.push('started = ?'); values.push(input.started); }
+  if (input.ended !== undefined) { fields.push('ended = ?'); values.push(input.ended); }
+  if (input.notes !== undefined) { fields.push('notes = ?'); values.push(input.notes); }
+  if (fields.length === 0) return segment;
+
+  // Recalculate duration if times changed
+  if (input.started !== undefined || input.ended !== undefined) {
+    const s = input.started ?? (segment.started as string);
+    const e = input.ended ?? (segment.ended as string | null);
+    if (s && e) {
+      const ms = new Date(e).getTime() - new Date(s).getTime();
+      fields.push('duration_ms = ?');
+      values.push(ms);
+    }
+  }
+
+  fields.push("updated_at = datetime('now')");
+  values.push(segmentId);
+  db.prepare(`UPDATE timer_segments SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  return db.prepare('SELECT * FROM timer_segments WHERE id = ?').get(segmentId) as TimerSegment;
+}
+
 function createSegment(db: Database.Database, timerId: string, started: string): void {
   const id = randomUUID().replace(/-/g, '').toUpperCase();
   const now = new Date().toISOString();
@@ -246,8 +288,10 @@ function getTotalDuration(db: Database.Database, timerId: string): number {
 
 export function addEntry(db: Database.Database, input: CreateTimerInput & { started: string; ended: string }): Timer {
   const id = randomUUID().replace(/-/g, '').toUpperCase();
-  const slug = generateSlug(db, new Date(input.started));
-  const durationMs = new Date(input.ended).getTime() - new Date(input.started).getTime();
+  const roundedStarted = roundTo15(input.started);
+  const roundedEnded = roundTo15(input.ended);
+  const slug = generateSlug(db, new Date(roundedStarted));
+  const durationMs = new Date(roundedEnded).getTime() - new Date(roundedStarted).getTime();
   const now = new Date().toISOString();
 
   db.prepare(
@@ -260,8 +304,8 @@ export function addEntry(db: Database.Database, input: CreateTimerInput & { star
     input.project_id ?? null,
     input.task_id ?? null,
     slug,
-    input.started,
-    input.ended,
+    roundedStarted,
+    roundedEnded,
     durationMs,
     input.notes ?? null,
     input.notify_on_switch ? 1 : 0,
@@ -271,12 +315,13 @@ export function addEntry(db: Database.Database, input: CreateTimerInput & { star
     now,
   );
 
-  // Create a closed segment for the entry
+  // Create a closed segment for the entry (exact times, not rounded)
   const segId = randomUUID().replace(/-/g, '').toUpperCase();
+  const segDurationMs = new Date(input.ended).getTime() - new Date(input.started).getTime();
   db.prepare(
     `INSERT INTO timer_segments (id, timer_id, started, ended, duration_ms, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(segId, id, input.started, input.ended, durationMs, now, now);
+  ).run(segId, id, input.started, input.ended, segDurationMs, now, now);
 
   return findById(db, id)!;
 }

@@ -36,7 +36,7 @@ import { ApiService } from '../services/api.service';
     SegmentListComponent,
   ],
   template: `
-    <mat-card [class.running]="isRunning()" [class.paused]="isPaused()" [class.scheduled]="isScheduled()" [class.compact]="compact()" [class.expanded]="expandable() && !compact()" (click)="handleCardClick($event)">
+    <mat-card [class.running]="isRunning()" [class.paused]="isPaused()" [class.scheduled]="isScheduled()" [class.cancelled]="isCancelled()" [class.compact]="compact()" [class.expanded]="expandable() && !compact()" (click)="handleCardClick($event)">
       <div class="card-top-row">
         <div class="timer-chips">
           @if (timer().recurring_id) {
@@ -253,6 +253,7 @@ import { ApiService } from '../services/api.service';
     mat-card.running { border-left: 4px solid #4caf50; }
     mat-card.paused { border-left: 4px solid #ff9800; }
     mat-card.scheduled { border-left: 4px solid #ff9800; opacity: 0.85; }
+    mat-card.cancelled { border-left: 4px solid #666; opacity: 0.5; }
     .scheduled-label { display: flex; align-items: center; gap: 4px; color: #ff9800; font-size: 0.9rem; }
     .scheduled-icon { font-size: 18px; width: 18px; height: 18px; }
     mat-card.expanded { outline: 2px solid var(--mat-sys-primary); box-shadow: var(--mat-sys-level3); }
@@ -357,7 +358,12 @@ export class TimerCardComponent implements OnInit, OnDestroy {
   }
 
   isScheduled() {
-    return !this.timer().started && this.timer().state === 'stopped';
+    return !this.timer().started && this.timer().state === 'stopped' && !this.isCancelled();
+  }
+
+  isCancelled() {
+    return this.timer().state === 'stopped' && this.timer().duration_ms === 0
+      && (this.timer().notes?.toLowerCase().includes('cancelled') || this.timer().notes?.toLowerCase().includes('canceled'));
   }
 
   hasMultipleSegments(): boolean {

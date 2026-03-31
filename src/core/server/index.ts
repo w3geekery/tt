@@ -11,6 +11,7 @@ import type { Request, Response } from 'express';
 import config from '../../../tt.config.js';
 import { getDb } from '../db/connection.js';
 import { loadExtensions } from '../extensions.js';
+import * as weeklyTasksDb from '../db/weekly-tasks.js';
 import { sseHandler } from './sse.js';
 import { timersRouter } from './routes/timers.js';
 import { companiesRouter } from './routes/companies.js';
@@ -49,9 +50,22 @@ export function createApp() {
   app.use('/api/autocap', autocapRouter);
   app.use('/api/templates', templatesRouter);
   // Weekly tasks
-  app.get('/api/weekly-tasks', (_req: Request, res: Response) => {
-    // Stub — return empty array
-    res.json([]);
+  app.get('/api/weekly-tasks', (req: Request, res: Response) => {
+    const db = getDb(config.db);
+    let weekStart = req.query.week_start as string | undefined;
+    if (!weekStart) {
+      const ptDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+      const d = new Date(ptDate + 'T12:00:00');
+      const day = d.getDay();
+      d.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
+      weekStart = d.toISOString().slice(0, 10);
+    }
+    res.json(weeklyTasksDb.findByWeek(db, weekStart));
+  });
+  app.post('/api/weekly-tasks', (req: Request, res: Response) => {
+    const db = getDb(config.db);
+    weeklyTasksDb.upsert(db, req.body);
+    res.status(201).json(req.body);
   });
 
   app.get('/api/sse', sseHandler);

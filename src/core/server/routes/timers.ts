@@ -85,6 +85,20 @@ timersRouter.get('/running', (_req: Request, res: Response) => {
   res.json(enrichTimer(db, timer));
 });
 
+// POST /api/timers/entry — add a manual time entry
+timersRouter.post('/entry', (req: Request, res: Response) => {
+  const db = getDb();
+  const { company_id, project_id, task_id, started, ended, notes } = req.body;
+  if (!company_id || !started || !ended) {
+    res.status(400).json({ error: 'company_id, started, and ended are required' });
+    return;
+  }
+  const timer = timersDb.addEntry(db, { company_id, project_id, task_id, started, ended, notes });
+  const enriched = enrichTimer(db, timer);
+  broadcast('timer-updated', { type: 'timer-updated', data: enriched });
+  res.status(201).json(enriched);
+});
+
 // GET /api/timers/templates?limit=N — most-used company/project/task combos
 timersRouter.get('/templates', (req: Request, res: Response) => {
   const db = getDb();
@@ -113,6 +127,14 @@ timersRouter.get('/scheduled', (_req: Request, res: Response) => {
   res.json([]);
 });
 
+// GET /api/timers/slug/:slug — find timer by slug
+timersRouter.get('/slug/:slug', (req: Request, res: Response) => {
+  const db = getDb();
+  const timer = timersDb.findBySlug(db, req.params.slug as string);
+  if (!timer) { res.status(404).json({ error: 'Timer not found' }); return; }
+  res.json(enrichTimer(db, timer));
+});
+
 // GET /api/timers/:id — get timer by id
 timersRouter.get('/:id', (req: Request, res: Response) => {
   const db = getDb();
@@ -121,13 +143,32 @@ timersRouter.get('/:id', (req: Request, res: Response) => {
   res.json(enrichTimer(db, timer));
 });
 
-// POST /api/timers — create a new timer
+// POST /api/timers — create and auto-start a new timer (stops any running timer)
 timersRouter.post('/', (req: Request, res: Response) => {
   const db = getDb();
+  const isScheduled = !!req.body.start_at;
   const timer = timersDb.create(db, req.body);
-  const enriched = enrichTimer(db, timer);
-  broadcast('timer-updated', { type: 'timer-updated', data: enriched });
-  res.status(201).json(enriched);
+
+  if (!isScheduled) {
+    // Stop any currently running timer
+    const running = timersDb.findRunning(db);
+    if (running) {
+      const stopped = timersDb.stop(db, running.id);
+      broadcast('timer-updated', { type: 'timer-updated', data: enrichTimer(db, stopped!) });
+      if (running.notify_on_switch) {
+        broadcast('notification:fired', { type: 'timer-switch', from: stopped!.slug, to: timer.slug });
+      }
+    }
+    // Auto-start the new timer
+    const started = timersDb.start(db, timer.id);
+    const enriched = enrichTimer(db, started);
+    broadcast('timer-updated', { type: 'timer-updated', data: enriched });
+    res.status(201).json(enriched);
+  } else {
+    const enriched = enrichTimer(db, timer);
+    broadcast('timer-updated', { type: 'timer-updated', data: enriched });
+    res.status(201).json(enriched);
+  }
 });
 
 // PATCH /api/timers/:id — update timer
@@ -198,12 +239,19 @@ timersRouter.post('/start-scheduled', (_req: Request, res: Response) => {
   res.json([]);
 });
 
-// PATCH /api/timers/:timerId/segments/:segmentId — update segment notes
+// GET /api/timers/:timerId/segments — list segments for a timer
+timersRouter.get('/:timerId/segments', (req: Request, res: Response) => {
+  const db = getDb();
+  const segments = timersDb.getSegments(db, req.params.timerId as string);
+  res.json(segments);
+});
+
+// PATCH /api/timers/:timerId/segments/:segmentId — update segment notes, started, ended
 timersRouter.patch('/:timerId/segments/:segmentId', (req: Request, res: Response) => {
   const db = getDb();
-  const { notes } = req.body;
+  const { notes, started, ended } = req.body;
 
-  const segment = timersDb.updateSegmentNotes(db, req.params.segmentId as string, notes ?? null);
+  const segment = timersDb.updateSegment(db, req.params.segmentId as string, { notes, started, ended });
   if (!segment) {
     res.status(404).json({ error: 'Segment not found' });
     return;

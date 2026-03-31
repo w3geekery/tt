@@ -6,6 +6,7 @@ import * as companiesDb from '../../db/companies.js';
 import * as projectsDb from '../../db/projects.js';
 import * as tasksDb from '../../db/tasks.js';
 import { broadcast } from '../sse.js';
+import { materializeRecurring } from '../../cron/engine.js';
 
 export const recurringRouter = Router();
 
@@ -43,10 +44,16 @@ recurringRouter.get('/', (req: Request, res: Response) => {
   res.json(enriched);
 });
 
-// POST /api/timers/recurring/materialize — materialize recurring timers
+// POST /api/timers/recurring/materialize — trigger materialization now
 recurringRouter.post('/materialize', (_req: Request, res: Response) => {
-  // Return empty array — cron handles materialization
-  res.json([]);
+  const db = getDb();
+  materializeRecurring(db);
+  // Return today's timers so caller can see what was materialized
+  const todayPT = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+  const timers = db.prepare(
+    `SELECT * FROM timers WHERE substr(created_at, 1, 10) = ? AND recurring_id IS NOT NULL ORDER BY created_at`,
+  ).all(todayPT);
+  res.json(timers);
 });
 
 // POST /api/timers/recurring — create recurring timer

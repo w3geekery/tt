@@ -20,6 +20,7 @@ import * as timersDb from '../db/timers.js';
 import * as recurringDb from '../db/recurring.js';
 import * as notificationsDb from '../db/notifications.js';
 import * as specstoryDb from '../db/specstory.js';
+import * as weeklyTasksDb from '../db/weekly-tasks.js';
 import { loadExtensions, runHook } from '../extensions.js';
 import config from '../../../tt.config.js';
 
@@ -545,6 +546,13 @@ server.tool('schedule_timer', 'Schedule a timer to start at a future time.', {
 
 server.tool('list_weekly_tasks', 'List tasks used this week with hours.', {}, async () => {
   const db = getDb();
+  // Calculate Monday of current week in PT
+  const today = ptDate();
+  const d = new Date(today + 'T12:00:00');
+  const day = d.getDay();
+  d.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
+  const weekStart = d.toISOString().slice(0, 10);
+
   const rows = db.prepare(`
     SELECT tk.name as task_name, tk.code as task_code, tk.url as task_url,
            c.name as company_name, p.name as project_name,
@@ -553,11 +561,11 @@ server.tool('list_weekly_tasks', 'List tasks used this week with hours.', {}, as
     JOIN tasks tk ON tk.id = t.task_id
     LEFT JOIN companies c ON c.id = t.company_id
     LEFT JOIN projects p ON p.id = t.project_id
-    WHERE date(t.started) >= date('now', 'weekday 0', '-7 days')
+    WHERE substr(t.started, 1, 10) >= ?
       AND t.task_id IS NOT NULL
     GROUP BY t.task_id
     ORDER BY total_ms DESC
-  `).all() as Array<Record<string, unknown>>;
+  `).all(weekStart) as Array<Record<string, unknown>>;
 
   const lines = rows.map(r => {
     const hrs = ((r.total_ms as number ?? 0) / 3600000).toFixed(2);
@@ -565,7 +573,28 @@ server.tool('list_weekly_tasks', 'List tasks used this week with hours.', {}, as
     return `${r.company_name} / ${r.project_name} / ${r.task_name} ${code} | ${hrs}h (${r.timer_count})`;
   });
 
+  // Also show assigned weekly tasks
+  const assigned = weeklyTasksDb.findByWeek(db, weekStart);
+  if (assigned.length) {
+    lines.push('', '--- Weekly Task Assignments ---');
+    for (const wt of assigned) {
+      lines.push(`${wt.company}: ${wt.zb_task_name ?? wt.zb_task_id} ${wt.zb_task_code ? `[${wt.zb_task_code}]` : ''}`);
+    }
+  }
+
   return { content: [{ type: 'text', text: lines.length ? lines.join('\n') : 'No tasks this week' }] };
+});
+
+server.tool('upsert_weekly_task', 'Assign a ZeroBias task for a company for the week.', {
+  week_start: z.string().describe('Monday date (YYYY-MM-DD)'),
+  company: z.string().describe('Company name (e.g. ZeroBias, W3Geekery)'),
+  zb_task_id: z.string().describe('ZeroBias task ID'),
+  zb_task_code: z.string().optional().describe('Task code'),
+  zb_task_name: z.string().optional().describe('Task name'),
+}, async ({ week_start, company, zb_task_id, zb_task_code, zb_task_name }) => {
+  const db = getDb();
+  weeklyTasksDb.upsert(db, { week_start, company, zb_task_id, zb_task_code: zb_task_code ?? null, zb_task_name: zb_task_name ?? null });
+  return { content: [{ type: 'text' as const, text: `Assigned ${zb_task_name ?? zb_task_id} for ${company} week of ${week_start}` }] };
 });
 
 // --- Timeline settings ---

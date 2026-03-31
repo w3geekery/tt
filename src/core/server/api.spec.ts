@@ -64,10 +64,10 @@ describe('Companies API', () => {
     expect(res.status).toBe(404);
   });
 
-  it('PUT /api/companies/:id updates a company', async () => {
+  it('PATCH /api/companies/:id updates a company', async () => {
     const created = await seedCompany();
     const res = await request(createApp())
-      .put(`/api/companies/${created.body.id}`)
+      .patch(`/api/companies/${created.body.id}`)
       .send({ name: 'New Name' });
     expect(res.status).toBe(200);
     expect(res.body.name).toBe('New Name');
@@ -99,13 +99,13 @@ describe('Projects API', () => {
     const list = await request(createApp()).get('/api/projects');
     expect(list.body).toHaveLength(1);
 
-    // By company
-    const byCo = await request(createApp()).get(`/api/projects/company/${companyId}`);
+    // By company (query param, not path param)
+    const byCo = await request(createApp()).get(`/api/projects?company_id=${companyId}`);
     expect(byCo.body).toHaveLength(1);
 
     // Update
     const updated = await request(createApp())
-      .put(`/api/projects/${created.body.id}`)
+      .patch(`/api/projects/${created.body.id}`)
       .send({ name: 'Dashboard', billable: false });
     expect(updated.body.name).toBe('Dashboard');
     expect(updated.body.billable).toBe(false);
@@ -131,7 +131,7 @@ describe('Tasks API', () => {
     expect(list.body).toHaveLength(1);
 
     const updated = await request(createApp())
-      .put(`/api/tasks/${created.body.id}`)
+      .patch(`/api/tasks/${created.body.id}`)
       .send({ name: 'Fixed bug' });
     expect(updated.body.name).toBe('Fixed bug');
 
@@ -149,23 +149,30 @@ describe('Timers API', () => {
     companyId = co.body.id;
   });
 
-  it('creates a timer', async () => {
+  it('creates and auto-starts a timer', async () => {
     const res = await request(createApp())
       .post('/api/timers')
       .send({ company_id: companyId, notes: 'Test timer' });
     expect(res.status).toBe(201);
-    expect(res.body.state).toBe('stopped');
+    expect(res.body.state).toBe('running');
     expect(res.body.slug).toMatch(/^\d{6}-\d+$/);
+  });
+
+  it('creates a scheduled timer without auto-starting', async () => {
+    const res = await request(createApp())
+      .post('/api/timers')
+      .send({ company_id: companyId, start_at: '2099-01-01T10:00:00.000Z' });
+    expect(res.status).toBe(201);
+    expect(res.body.state).toBe('stopped');
   });
 
   it('start/stop lifecycle', async () => {
     const app = createApp();
+    // POST auto-starts, so it's already running
     const created = await request(app)
       .post('/api/timers')
       .send({ company_id: companyId });
-
-    const started = await request(app).post(`/api/timers/${created.body.id}/start`);
-    expect(started.body.state).toBe('running');
+    expect(created.body.state).toBe('running');
 
     const running = await request(app).get('/api/timers/running');
     expect(running.body.id).toBe(created.body.id);
@@ -177,11 +184,12 @@ describe('Timers API', () => {
 
   it('pause/resume lifecycle', async () => {
     const app = createApp();
+    // POST auto-starts, already running
     const created = await request(app)
       .post('/api/timers')
       .send({ company_id: companyId });
+    expect(created.body.state).toBe('running');
 
-    await request(app).post(`/api/timers/${created.body.id}/start`);
     const paused = await request(app).post(`/api/timers/${created.body.id}/pause`);
     expect(paused.body.state).toBe('paused');
 
@@ -202,6 +210,7 @@ describe('Timers API', () => {
         notes: 'Meeting',
       });
     expect(res.status).toBe(201);
+    // 9:00→10:30 rounds to 9:00→10:30 (already on 15-min boundaries)
     expect(res.body.duration_ms).toBe(90 * 60 * 1000);
   });
 
@@ -210,10 +219,14 @@ describe('Timers API', () => {
     const created = await request(app)
       .post('/api/timers')
       .send({ company_id: companyId });
+    // Timer is auto-started (running), so stop it first
+    await request(app).post(`/api/timers/${created.body.id}/stop`);
 
+    // Pausing a stopped timer should fail
     const pauseRes = await request(app).post(`/api/timers/${created.body.id}/pause`);
     expect(pauseRes.status).toBe(400);
 
+    // Resuming a stopped timer should fail
     const resumeRes = await request(app).post(`/api/timers/${created.body.id}/resume`);
     expect(resumeRes.status).toBe(400);
   });
@@ -243,25 +256,25 @@ describe('Recurring API', () => {
     const app = createApp();
 
     const created = await request(app)
-      .post('/api/recurring')
+      .post('/api/timers/recurring')
       .send({ company_id: companyId, pattern: 'daily', start_date: '2026-03-01' });
     expect(created.status).toBe(201);
     expect(created.body.active).toBe(true);
 
-    const active = await request(app).get('/api/recurring/active');
+    const active = await request(app).get('/api/timers/recurring?active=true');
     expect(active.body).toHaveLength(1);
 
     const skipped = await request(app)
-      .post(`/api/recurring/${created.body.id}/skip`)
+      .post(`/api/timers/recurring/${created.body.id}/skip`)
       .send({ date: '2026-03-15' });
     expect(skipped.body.skipped_dates).toEqual(['2026-03-15']);
 
     const unskipped = await request(app)
-      .post(`/api/recurring/${created.body.id}/unskip`)
+      .post(`/api/timers/recurring/${created.body.id}/unskip`)
       .send({ date: '2026-03-15' });
     expect(unskipped.body.skipped_dates).toEqual([]);
 
-    const deleted = await request(app).delete(`/api/recurring/${created.body.id}`);
+    const deleted = await request(app).delete(`/api/timers/recurring/${created.body.id}`);
     expect(deleted.status).toBe(204);
   });
 });
@@ -321,9 +334,9 @@ describe('Cap Status API', () => {
 
     const res = await request(app).get('/api/cap-status');
     expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].project_name).toBe('Capped');
-    expect(res.body[0].daily.cap_hrs).toBe(8);
-    expect(res.body[0].weekly.cap_hrs).toBe(40);
+    expect(res.body.projects).toHaveLength(1);
+    expect(res.body.projects[0].project).toBe('Capped');
+    expect(res.body.projects[0].daily.cap).toBe(8);
+    expect(res.body.projects[0].weekly.cap).toBe(40);
   });
 });

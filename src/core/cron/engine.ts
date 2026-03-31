@@ -40,8 +40,10 @@ export function stopCron(): void {
 async function tick(db: Database.Database): Promise<void> {
   try {
     materializeRecurring(db);
+    autoStartScheduled(db);
     autoStopTimers(db);
     await fireNotifications(db);
+    checkCapWarnings(db);
     await checkCaps(db);
     syncState(db);
   } catch (err) {
@@ -133,6 +135,22 @@ function autoStartPendingRecurring(db: Database.Database, now: Date): void {
   }
 }
 
+/** Auto-start one-off scheduled timers whose start_at time has passed. */
+function autoStartScheduled(db: Database.Database): void {
+  const now = new Date().toISOString();
+  const scheduled = db.prepare(
+    `SELECT id FROM timers WHERE state = 'stopped' AND started IS NULL
+       AND start_at IS NOT NULL AND start_at <= ? AND recurring_id IS NULL`,
+  ).all(now) as Array<{ id: string }>;
+
+  for (const { id } of scheduled) {
+    timersDb.start(db, id);
+    const timer = timersDb.findById(db, id);
+    broadcast('timer:started', timer);
+    console.log(`[cron] Auto-started scheduled timer ${id}`);
+  }
+}
+
 /** Stop timers that have reached their stop_at time. */
 function autoStopTimers(db: Database.Database): void {
   const now = new Date().toISOString();
@@ -159,6 +177,45 @@ async function fireNotifications(db: Database.Database): Promise<void> {
     sendNotification(n.title as string, (n.message as string) ?? '');
     broadcast('notification:fired', n);
   }
+}
+
+/** Fire cap warning notifications at 80% of daily cap. */
+function checkCapWarnings(db: Database.Database): void {
+  const running = timersDb.findRunning(db);
+  if (!running?.project_id || !running.started) return;
+
+  const project = projectsDb.findById(db, running.project_id);
+  if (!project?.daily_cap_hrs || !project.notify_on_cap) return;
+
+  const { dateStr: todayPT } = pacificNow();
+  const stoppedMs = (db.prepare(
+    `SELECT COALESCE(SUM(duration_ms), 0) as ms FROM timers
+     WHERE substr(started, 1, 10) = ? AND project_id = ? AND state = 'stopped'`,
+  ).get(todayPT, project.id) as { ms: number }).ms;
+  const runningMs = Date.now() - new Date(running.started).getTime();
+  const totalHrs = (stoppedMs + runningMs) / 3600000;
+  const pct = Math.round((totalHrs / project.daily_cap_hrs) * 100);
+
+  if (pct < 80) return;
+  if (pct >= 100) return; // checkCaps handles 100%+
+
+  // Check if we already warned today
+  const alreadyWarned = db.prepare(
+    `SELECT id FROM notifications WHERE type = 'cap_warning' AND timer_id IS NULL
+     AND message LIKE ? AND substr(created_at, 1, 10) = ?`,
+  ).get(`%${project.id}%`, todayPT);
+  if (alreadyWarned) return;
+
+  const remainingHrs = project.daily_cap_hrs - totalHrs;
+  const remainingMin = Math.round(remainingHrs * 60);
+  sendNotification('Cap warning', `${project.name}: ${pct}% — ~${remainingMin}m remaining`);
+  notificationsDb.create(db, {
+    type: 'cap_warning',
+    title: `Approaching daily cap: ${project.name}`,
+    message: `Project ${project.id} at ${pct}% (${totalHrs.toFixed(1)}/${project.daily_cap_hrs}h)`,
+    trigger_at: new Date().toISOString(),
+  });
+  broadcast('notification:fired', { type: 'cap_warning', project: project.name, pct });
 }
 
 /** Check if any capped projects have hit their caps. */
@@ -204,22 +261,52 @@ async function checkCaps(db: Database.Database): Promise<void> {
     // Autocap: if the running timer is on this project and overflow is configured, switch
     if (project.overflow_company_id && project.overflow_project_id) {
       const running = timersDb.findRunning(db);
-      if (running && running.project_id === project.id) {
-        // Stop running timer
-        const stopped = timersDb.stop(db, running.id);
-        broadcast('timer:stopped', stopped);
-        sendNotification('Autocap', `Stopped ${stopped.slug} — switching to overflow`);
+      if (running && running.project_id === project.id && running.started) {
+        // Calculate exact cap-hit time: how much of the cap was used by OTHER stopped timers today?
+        const otherMs = db.prepare(
+          `SELECT COALESCE(SUM(duration_ms), 0) as ms FROM timers
+           WHERE substr(started, 1, 10) = ? AND project_id = ? AND id != ? AND state = 'stopped'`,
+        ).get(todayPT, project.id, running.id) as { ms: number };
+        const capMs = (project.daily_cap_hrs ?? 0) * 3600000;
+        const remainingMs = capMs - otherMs.ms;
+        // Cap-hit time = running timer's start + remaining cap budget
+        const capHitMs = new Date(running.started).getTime() + Math.max(remainingMs, 0);
+        // Round to nearest 15 minutes
+        const fifteen = 15 * 60 * 1000;
+        const roundedCapHit = new Date(Math.round(capHitMs / fifteen) * fifteen).toISOString();
 
-        // Start overflow timer
-        const overflow = timersDb.create(db, {
+        // Stop running timer at the cap-hit time (backdate)
+        // Close open segment first
+        db.prepare(
+          `UPDATE timer_segments SET ended = ?, duration_ms = MAX(0, CAST((julianday(?) - julianday(started)) * 86400000 AS INTEGER)), updated_at = datetime('now')
+           WHERE timer_id = ? AND ended IS NULL`,
+        ).run(roundedCapHit, roundedCapHit, running.id);
+        const totalMs = db.prepare(
+          `SELECT COALESCE(SUM(duration_ms), 0) as ms FROM timer_segments WHERE timer_id = ?`,
+        ).get(running.id) as { ms: number };
+        db.prepare(
+          `UPDATE timers SET state = 'stopped', ended = ?, duration_ms = ?, updated_at = datetime('now') WHERE id = ?`,
+        ).run(roundedCapHit, totalMs.ms, running.id);
+        const stopped = timersDb.findById(db, running.id)!;
+        broadcast('timer:stopped', stopped);
+        sendNotification('Autocap', `Stopped ${stopped.slug} at cap (${project.daily_cap_hrs}h)`);
+
+        // Start overflow timer from the cap-hit time
+        const overflow = timersDb.addEntry(db, {
           company_id: project.overflow_company_id,
           project_id: project.overflow_project_id,
           task_id: project.overflow_task_id ?? undefined,
           notes: `Overflow from ${project.name} cap`,
+          started: roundedCapHit,
+          ended: new Date().toISOString(),
         });
-        const started = timersDb.start(db, overflow.id);
-        broadcast('timer:started', started);
-        sendNotification('Autocap', `Started ${started.slug} on overflow project`);
+        // Re-open it as running
+        db.prepare(`UPDATE timers SET state = 'running', ended = NULL, duration_ms = NULL, updated_at = datetime('now') WHERE id = ?`).run(overflow.id);
+        db.prepare(`UPDATE timer_segments SET ended = NULL, duration_ms = NULL, updated_at = datetime('now') WHERE timer_id = ? ORDER BY started DESC LIMIT 1`).run(overflow.id);
+        const overflowRunning = timersDb.findById(db, overflow.id)!;
+        broadcast('timer:started', overflowRunning);
+        sendNotification('Autocap', `Started ${overflowRunning.slug} on overflow project`);
+        console.log(`[cron] Autocap: stopped ${stopped.slug} at ${roundedCapHit}, started overflow ${overflowRunning.slug}`);
       }
     }
   }

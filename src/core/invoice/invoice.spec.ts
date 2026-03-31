@@ -49,7 +49,7 @@ function seedData(db: Database.Database) {
     company_id: co.id,
     project_id: proj.id,
     started: '2026-03-16T09:00:00.000Z',
-    ended: '2026-03-16T12:20:00.000Z',
+    ended: '2026-03-16T12:30:00.000Z',
     notes: 'Morning session',
   });
 

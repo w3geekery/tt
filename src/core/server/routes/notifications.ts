@@ -45,6 +45,14 @@ notificationsRouter.get('/', (req: Request, res: Response) => {
 });
 
 // GET /api/notifications/:id
+// GET /api/notifications/pending — unfired, undismissed notifications
+notificationsRouter.get('/pending', (_req: Request, res: Response) => {
+  const db = getDb();
+  const all = notificationsDb.findAll(db);
+  const pending = all.filter(n => !n.fired_at && !n.dismissed);
+  res.json(pending);
+});
+
 notificationsRouter.get('/:id', (req: Request, res: Response) => {
   const n = notificationsDb.findById(getDb(), req.params.id as string);
   if (!n) { res.status(404).json({ error: 'Notification not found' }); return; }
@@ -74,6 +82,20 @@ notificationsRouter.patch('/:id', (req: Request, res: Response) => {
 
   if (!n) { res.status(404).json({ error: 'Notification not found' }); return; }
   broadcast('timer-updated', { type: 'timer-updated', data: n });
+  res.json(n);
+});
+
+// POST /api/notifications/:id/fire — mark notification as fired
+notificationsRouter.post('/:id/fire', (req: Request, res: Response) => {
+  const n = notificationsDb.markFired(getDb(), req.params.id as string);
+  if (!n) { res.status(404).json({ error: 'Notification not found' }); return; }
+  res.json(n);
+});
+
+// POST /api/notifications/:id/dismiss — dismiss notification
+notificationsRouter.post('/:id/dismiss', (req: Request, res: Response) => {
+  const n = notificationsDb.dismiss(getDb(), req.params.id as string);
+  if (!n) { res.status(404).json({ error: 'Notification not found' }); return; }
   res.json(n);
 });
 

@@ -119,6 +119,17 @@ CREATE TABLE IF NOT EXISTS notifications (
   dismissed INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS weekly_tasks (
+  week_start TEXT NOT NULL,
+  company TEXT NOT NULL,
+  zb_task_id TEXT NOT NULL,
+  zb_task_code TEXT,
+  zb_task_name TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (week_start, company)
+);
 `;
 
 export function applySchema(db: Database.Database): void {
