@@ -61,6 +61,9 @@ import { ApiService } from '../services/api.service';
             </mat-chip-set>
           }
         </div>
+        <button mat-icon-button class="favorite-star" [class.is-favorite]="isFavorite()" (click)="toggleFavorite($event)" [title]="isFavorite() ? 'Remove from favorites' : 'Add to favorites'">
+          <mat-icon>{{ isFavorite() ? 'star' : 'star_border' }}</mat-icon>
+        </button>
         @if (isScheduled()) {
           <div class="timer-duration scheduled-label">
             <mat-icon class="scheduled-icon">schedule</mat-icon>
@@ -87,7 +90,7 @@ import { ApiService } from '../services/api.service';
         @if (isScheduled()) {
           <div class="timer-times">
             <span class="time-range">
-              {{ timer().recurring_id ? 'Recurring' : 'Scheduled' }}{{ timer().start_at ? ' for ' + formatTime(timer().start_at) : '' }}
+              {{ timer().recurring_id ? formatTime(timer().start_at) || formatHHMM(timer().recurring_start_time) : 'Scheduled' }}{{ !timer().recurring_id && timer().start_at ? ' for ' + formatTime(timer().start_at) : '' }}
               <span> — </span>
               @if (editingEndTime()) {
                 <input type="time" class="inline-time-input" [value]="editEndValue"
@@ -263,6 +266,10 @@ import { ApiService } from '../services/api.service';
     .card-top-row { display: flex; justify-content: space-between; align-items: center; padding: 16px 16px 0; }
     .timer-chips { display: flex; gap: 4px; flex: 1; min-width: 0; align-items: center; }
     .recurring-badge { font-size: 18px; width: 18px; height: 18px; color: var(--mat-sys-tertiary); }
+    .favorite-star { --mdc-icon-button-state-layer-size: 28px; --mdc-icon-button-icon-size: 18px; width: 28px; height: 28px; padding: 0; flex-shrink: 0; }
+    .favorite-star mat-icon { font-size: 18px; width: 18px; height: 18px; color: var(--mat-sys-on-surface-variant); opacity: 0.4; }
+    .favorite-star:hover mat-icon { opacity: 0.8; }
+    .favorite-star.is-favorite mat-icon { color: #ffc107; opacity: 1; }
     .timer-duration { display: none; }
     .timer-duration.live { color: #4caf50; }
     .timer-times { font-size: 0.875rem; color: var(--mat-sys-on-surface-variant); margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
@@ -326,6 +333,8 @@ export class TimerCardComponent implements OnInit, OnDestroy {
   onTimeUpdate = output<{ id: string; started?: string; ended?: string; start_at?: string }>();
   onMakeRecurring = output<{ company_id: string; project_id: string | null; task_id: string | null; start_time: string }>();
   onToggleExpand = output<void>();
+  onToggleFavorite = output<{ company_id: string; project_id: string | null; task_id: string | null }>();
+  isFavorite = input(false);
 
   slugCopied = signal(false);
   externalTaskCopied = signal(false);
@@ -414,6 +423,14 @@ export class TimerCardComponent implements OnInit, OnDestroy {
   formatTime(iso: string | null): string {
     if (!iso) return '';
     return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  }
+
+  formatHHMM(time: string | null | undefined): string {
+    if (!time) return '';
+    const [h, m] = time.split(':').map(Number);
+    const suffix = h >= 12 ? 'PM' : 'AM';
+    const hour12 = h % 12 || 12;
+    return `${hour12}:${String(m).padStart(2, '0')} ${suffix}`;
   }
 
   contrastColor(hex: string): string {
@@ -613,6 +630,15 @@ export class TimerCardComponent implements OnInit, OnDestroy {
   openExternalTask(link: ExternalTaskLink): void {
     const url = this.externalTaskUrl(link);
     if (url) window.open(url, '_blank');
+  }
+
+  toggleFavorite(event: MouseEvent) {
+    event.stopPropagation();
+    this.onToggleFavorite.emit({
+      company_id: this.timer().company_id,
+      project_id: this.timer().project_id,
+      task_id: this.timer().task_id,
+    });
   }
 
   makeRecurring() {

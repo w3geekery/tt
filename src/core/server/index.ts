@@ -23,6 +23,7 @@ import { recurringRouter } from './routes/recurring.js';
 import { invoicesRouter } from './routes/invoices.js';
 import { autocapRouter } from './routes/autocap.js';
 import { templatesRouter } from './routes/templates.js';
+import { favoritesRouter } from './routes/favorites.js';
 import { startCron } from '../cron/engine.js';
 
 export function createApp() {
@@ -49,6 +50,7 @@ export function createApp() {
   app.use('/api/invoices', invoicesRouter);
   app.use('/api/autocap', autocapRouter);
   app.use('/api/templates', templatesRouter);
+  app.use('/api/favorites', favoritesRouter);
   // Weekly tasks
   app.get('/api/weekly-tasks', (req: Request, res: Response) => {
     const db = getDb(config.db);

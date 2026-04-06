@@ -69,6 +69,7 @@ export interface Timer {
   project_id: string | null;
   task_id: string | null;
   recurring_id: string | null;
+  recurring_start_time?: string | null;
   slug: string | null;
   state: TimerState;
   start_at: string | null;
@@ -96,7 +97,7 @@ export interface TimerSegment {
   timer_id: string;
   started: string;
   ended: string | null;
-  duration_ms: number | null;
+  duration_ms: number | null; // Computed from (ended - started) by API, never stored
   notes: string | null;
   paused_at: string | null;
   resume_at: string | null;
@@ -179,6 +180,21 @@ export interface RecurringTimer {
   project_color?: string | null;
   task_name?: string | null;
   task_code?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FavoriteTemplate {
+  id: string;
+  company_id: string;
+  project_id: string | null;
+  task_id: string | null;
+  sort_order: number;
+  company_name: string;
+  company_color: string | null;
+  project_name: string | null;
+  project_color: string | null;
+  task_name: string | null;
   created_at: string;
   updated_at: string;
 }

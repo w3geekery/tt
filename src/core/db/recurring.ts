@@ -81,6 +81,11 @@ export function update(db: Database.Database, id: string, input: UpdateRecurring
 }
 
 export function remove(db: Database.Database, id: string): boolean {
+  // Delete unstarted materialized timers — auto-created, never ran, no history to preserve
+  db.prepare('DELETE FROM timers WHERE recurring_id = ? AND started IS NULL').run(id);
+  // Detach started timers — preserve their time data, just remove the link
+  db.prepare('UPDATE timers SET recurring_id = NULL WHERE recurring_id = ?').run(id);
+  // Delete the recurring definition
   const result = db.prepare('DELETE FROM recurring_timers WHERE id = ?').run(id);
   return result.changes > 0;
 }

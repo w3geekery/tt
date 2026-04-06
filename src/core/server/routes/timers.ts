@@ -5,6 +5,7 @@ import * as timersDb from '../../db/timers.js';
 import * as companiesDb from '../../db/companies.js';
 import * as projectsDb from '../../db/projects.js';
 import * as tasksDb from '../../db/tasks.js';
+import * as recurringDb from '../../db/recurring.js';
 import { runHook } from '../../extensions.js';
 import { broadcast } from '../sse.js';
 
@@ -17,9 +18,21 @@ function enrichTimer(db: any, timer: any) {
   const task = timer.task_id ? tasksDb.findById(db, timer.task_id) : null;
   const segments = timersDb.getSegments(db, timer.id);
 
+  const recurring = timer.recurring_id ? recurringDb.findById(db, timer.recurring_id) : null;
+
+  // Compute duration from segment timestamps — never stored, always derived
+  const enrichedSegments = segments.map((seg: any) => ({
+    ...seg,
+    duration_ms: seg.ended
+      ? new Date(seg.ended).getTime() - new Date(seg.started).getTime()
+      : Date.now() - new Date(seg.started).getTime(),
+  }));
+  const duration_ms = enrichedSegments.reduce((sum: number, seg: any) => sum + Math.max(0, seg.duration_ms), 0);
+
   return {
     ...timer,
     user_id: 'local',
+    duration_ms,
     company_name: company?.name ?? null,
     company_color: company?.color ?? null,
     project_name: project?.name ?? null,
@@ -27,7 +40,8 @@ function enrichTimer(db: any, timer: any) {
     task_name: task?.name ?? null,
     task_code: task?.code ?? null,
     task_url: task?.url ?? null,
-    segments,
+    recurring_start_time: recurring?.start_time ?? null,
+    segments: enrichedSegments,
   };
 }
 

@@ -10,6 +10,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatDialogModule, MatDialog } from '@angular/material/dialog';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatChipsModule } from '@angular/material/chips';
+import { MatMenuModule } from '@angular/material/menu';
 import { MatDatepickerModule } from '@angular/material/datepicker';
 import { MatNativeDateModule } from '@angular/material/core';
 import { TimerCardComponent } from '../../components/timer-card';
@@ -25,7 +26,8 @@ import { NotificationTimelineComponent } from '../../components/notification-tim
 import { SseService } from '../../services/sse.service';
 import { CapStatusService } from '../../services/cap-status.service';
 import { CapProgressBarComponent } from '../../components/cap-progress-bar';
-import { Timer, Company, Project, Task, Notification, UserSettings, ProjectCapStatus, CapStatus } from '../../models';
+import { Timer, Company, Project, Task, Notification, UserSettings, ProjectCapStatus, CapStatus, FavoriteTemplate } from '../../models';
+import { ScheduleTimerDialogComponent } from './schedule-timer-dialog';
 
 @Component({
   selector: 'app-daily',
@@ -39,6 +41,7 @@ import { Timer, Company, Project, Task, Notification, UserSettings, ProjectCapSt
     MatDialogModule,
     MatSnackBarModule,
     MatChipsModule,
+    MatMenuModule,
     MatDatepickerModule,
     MatNativeDateModule,
     TimerCardComponent,
@@ -59,8 +62,10 @@ export class DailyComponent implements OnInit, OnDestroy {
   notifications = signal<Notification[]>([]);
   timelineSettings = signal<UserSettings>({ timeline_start_hour: 5, timeline_end_hour: 19, notify_on_cap: true });
   dailyCaps = signal<ProjectCapStatus[]>([]);
+  favorites = signal<FavoriteTemplate[]>([]);
   selectedDate = signal<Date>(new Date());
   selectedCompanies = signal<Set<string>>(new Set());
+  selectedFavorite = signal<FavoriteTemplate | null>(null);
 
   // Navigation context
   fromMonthly = signal(false);
@@ -94,8 +99,9 @@ export class DailyComponent implements OnInit, OnDestroy {
       : this.timers().filter((t) => selected.has(t.company_name ?? 'Unknown'));
     const group = (t: Timer) => {
       if (t.state === 'running') return 0;
+      if (t.state === 'paused') return 0; // paused stays with running
       if (!t.started) return 1; // scheduled/recurring (not yet started)
-      return 2; // ended/paused/completed
+      return 2; // ended/completed
     };
     return [...timers].sort((a, b) => {
       const ga = group(a), gb = group(b);
@@ -108,10 +114,10 @@ export class DailyComponent implements OnInit, OnDestroy {
     });
   });
 
-  activeTimers = computed(() => this.filteredTimers().filter((t) => t.state === 'running' || !t.started));
+  activeTimers = computed(() => this.filteredTimers().filter((t) => t.state === 'running' || t.state === 'paused' || !t.started));
   historyTimers = computed(() =>
     this.filteredTimers()
-      .filter((t) => t.state !== 'running' && !!t.started)
+      .filter((t) => t.state !== 'running' && t.state !== 'paused' && !!t.started)
       .sort((a, b) => new Date(a.started!).getTime() - new Date(b.started!).getTime())
   );
 
@@ -186,6 +192,7 @@ export class DailyComponent implements OnInit, OnDestroy {
           this.loadNotifications();
           this.loadTimelineSettings();
           this.loadCapStatus();
+          this.loadFavorites();
         }
       }
     }, 50);
@@ -367,6 +374,82 @@ export class DailyComponent implements OnInit, OnDestroy {
       current.add(name);
     }
     this.selectedCompanies.set(current);
+  }
+
+  loadFavorites() {
+    this.api.getFavorites().subscribe((f) => this.favorites.set(f));
+  }
+
+  isFavoriteTimer(timer: Timer): boolean {
+    return this.favorites().some((f) =>
+      f.company_id === timer.company_id
+      && (f.project_id ?? null) === (timer.project_id ?? null)
+      && (f.task_id ?? null) === (timer.task_id ?? null),
+    );
+  }
+
+  toggleFavorite(event: { company_id: string; project_id: string | null; task_id: string | null }) {
+    const existing = this.favorites().find((f) =>
+      f.company_id === event.company_id
+      && (f.project_id ?? null) === (event.project_id ?? null)
+      && (f.task_id ?? null) === (event.task_id ?? null),
+    );
+    if (existing) {
+      this.api.deleteFavorite(existing.id).subscribe(() => {
+        this.loadFavorites();
+        this.snackBar.open('Removed from favorites', 'OK', { duration: 2000 });
+      });
+    } else {
+      this.api.createFavorite(event.company_id, event.project_id, event.task_id).subscribe(() => {
+        this.loadFavorites();
+        this.snackBar.open('Added to favorites', 'OK', { duration: 2000 });
+      });
+    }
+  }
+
+  selectFavorite(fav: FavoriteTemplate) {
+    this.selectedFavorite.set(this.selectedFavorite()?.id === fav.id ? null : fav);
+  }
+
+  startFromFavorite() {
+    const fav = this.selectedFavorite();
+    if (!fav) return;
+    this.timerService.create({
+      company_id: fav.company_id,
+      project_id: fav.project_id,
+      task_id: fav.task_id,
+    }).subscribe(() => {
+      this.selectedFavorite.set(null);
+      this.loadTimers();
+      this.snackBar.open('Timer started', 'OK', { duration: 2000 });
+    });
+  }
+
+  scheduleFromFavorite() {
+    const fav = this.selectedFavorite();
+    if (!fav) return;
+    const ref = this.dialog.open(ScheduleTimerDialogComponent, {
+      width: '400px',
+      data: {
+        company_name: fav.company_name,
+        project_name: fav.project_name,
+        task_name: fav.task_name,
+        company_color: fav.company_color,
+      },
+    });
+    ref.afterClosed().subscribe((result) => {
+      if (!result) return;
+      this.timerService.create({
+        company_id: fav.company_id,
+        project_id: fav.project_id,
+        task_id: fav.task_id,
+        start_at: result.start_at,
+      }).subscribe(() => {
+        this.selectedFavorite.set(null);
+        this.loadTimers();
+        this.snackBar.open('Timer scheduled', 'OK', { duration: 2000 });
+      });
+    });
   }
 
   isToday(): boolean {

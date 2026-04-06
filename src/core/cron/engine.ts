@@ -78,8 +78,9 @@ function materializeRecurring(db: Database.Database): void {
 
     // Check if already materialized today (by recurring_id OR by matching company/project/task)
     // Use created_at (always set) instead of started (NULL if never started)
+    // Offset created_at by -7h to approximate Pacific Time for date comparison
     const existing = db.prepare(
-      `SELECT id FROM timers WHERE substr(created_at, 1, 10) = ? AND (
+      `SELECT id FROM timers WHERE date(created_at, '-7 hours') = date(?) AND (
         recurring_id = ?
         OR (company_id = ? AND COALESCE(project_id,'') = COALESCE(?,'') AND COALESCE(task_id,'') = COALESCE(?,''))
       )`,
@@ -116,7 +117,7 @@ function autoStartPendingRecurring(db: Database.Database, now: Date): void {
   const { dateStr: todayStr } = pacificNow();
   const pending = db.prepare(
     `SELECT t.id, t.recurring_id FROM timers t
-     WHERE substr(t.created_at, 1, 10) = ? AND t.state = 'stopped' AND t.started IS NULL
+     WHERE date(t.created_at, '-7 hours') = date(?) AND t.state = 'stopped' AND t.started IS NULL
        AND t.recurring_id IS NOT NULL`,
   ).all(todayStr) as Array<{ id: string; recurring_id: string }>;
 
@@ -174,7 +175,9 @@ async function fireNotifications(db: Database.Database): Promise<void> {
 
   for (const n of pending) {
     notificationsDb.markFired(db, n.id as string);
-    sendNotification(n.title as string, (n.message as string) ?? '');
+    // Strip dedup prefix [ID] from message before showing to user
+    const displayMessage = ((n.message as string) ?? '').replace(/^\[[A-F0-9]+\]\s*/, '');
+    sendNotification(n.title as string, displayMessage);
     broadcast('notification:fired', n);
   }
 }
@@ -189,8 +192,12 @@ function checkCapWarnings(db: Database.Database): void {
 
   const { dateStr: todayPT } = pacificNow();
   const stoppedMs = (db.prepare(
-    `SELECT COALESCE(SUM(duration_ms), 0) as ms FROM timers
-     WHERE substr(started, 1, 10) = ? AND project_id = ? AND state = 'stopped'`,
+    `SELECT COALESCE(SUM(
+      CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
+    ), 0) as ms
+    FROM timers t
+    JOIN timer_segments ts ON ts.timer_id = t.id
+    WHERE substr(t.started, 1, 10) = ? AND t.project_id = ? AND t.state = 'stopped'`,
   ).get(todayPT, project.id) as { ms: number }).ms;
   const runningMs = Date.now() - new Date(running.started).getTime();
   const totalHrs = (stoppedMs + runningMs) / 3600000;
@@ -199,7 +206,7 @@ function checkCapWarnings(db: Database.Database): void {
   if (pct < 80) return;
   if (pct >= 100) return; // checkCaps handles 100%+
 
-  // Check if we already warned today
+  // Check if we already warned today (match on project ID stored in message)
   const alreadyWarned = db.prepare(
     `SELECT id FROM notifications WHERE type = 'cap_warning' AND timer_id IS NULL
      AND message LIKE ? AND substr(created_at, 1, 10) = ?`,
@@ -209,12 +216,13 @@ function checkCapWarnings(db: Database.Database): void {
   const remainingHrs = project.daily_cap_hrs - totalHrs;
   const remainingMin = Math.round(remainingHrs * 60);
   sendNotification('Cap warning', `${project.name}: ${pct}% — ~${remainingMin}m remaining`);
-  notificationsDb.create(db, {
+  const capWarning = notificationsDb.create(db, {
     type: 'cap_warning',
     title: `Approaching daily cap: ${project.name}`,
-    message: `Project ${project.id} at ${pct}% (${totalHrs.toFixed(1)}/${project.daily_cap_hrs}h)`,
+    message: `[${project.id}] ${project.name} at ${pct}% (${totalHrs.toFixed(1)}/${project.daily_cap_hrs}h)`,
     trigger_at: new Date().toISOString(),
   });
+  notificationsDb.markFired(db, capWarning.id);
   broadcast('notification:fired', { type: 'cap_warning', project: project.name, pct });
 }
 
@@ -223,9 +231,13 @@ async function checkCaps(db: Database.Database): Promise<void> {
   const { dateStr: todayPT } = pacificNow();
   const rows = db.prepare(`
     WITH daily_totals AS (
-      SELECT project_id, COALESCE(SUM(duration_ms), 0) / 3600000.0 AS hrs
-      FROM timers WHERE substr(started, 1, 10) = ? AND project_id IS NOT NULL
-      GROUP BY project_id
+      SELECT t.project_id, COALESCE(SUM(
+        CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
+      ), 0) / 3600000.0 AS hrs
+      FROM timers t
+      JOIN timer_segments ts ON ts.timer_id = t.id
+      WHERE substr(t.started, 1, 10) = ? AND t.project_id IS NOT NULL
+      GROUP BY t.project_id
     )
     SELECT p.id, p.name, p.daily_cap_hrs, d.hrs as daily_used,
            p.notify_on_cap, p.overflow_company_id, p.overflow_project_id
@@ -248,12 +260,13 @@ async function checkCaps(db: Database.Database): Promise<void> {
 
     if (row.notify_on_cap) {
       sendNotification('Cap reached', `${row.name}: ${(row.daily_used as number).toFixed(1)}/${row.daily_cap_hrs}h`);
-      notificationsDb.create(db, {
+      const capHit = notificationsDb.create(db, {
         type: 'cap_hit',
         title: `Daily cap reached: ${row.name}`,
-        message: `Project ${row.id} hit ${row.daily_cap_hrs}h`,
+        message: `[${row.id}] ${row.name} hit ${row.daily_cap_hrs}h`,
         trigger_at: new Date().toISOString(),
       });
+      notificationsDb.markFired(db, capHit.id);
     }
 
     await runHook('onCapHit', project, 'daily');
@@ -264,8 +277,12 @@ async function checkCaps(db: Database.Database): Promise<void> {
       if (running && running.project_id === project.id && running.started) {
         // Calculate exact cap-hit time: how much of the cap was used by OTHER stopped timers today?
         const otherMs = db.prepare(
-          `SELECT COALESCE(SUM(duration_ms), 0) as ms FROM timers
-           WHERE substr(started, 1, 10) = ? AND project_id = ? AND id != ? AND state = 'stopped'`,
+          `SELECT COALESCE(SUM(
+            CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
+          ), 0) as ms
+          FROM timers t
+          JOIN timer_segments ts ON ts.timer_id = t.id
+          WHERE substr(t.started, 1, 10) = ? AND t.project_id = ? AND t.id != ? AND t.state = 'stopped'`,
         ).get(todayPT, project.id, running.id) as { ms: number };
         const capMs = (project.daily_cap_hrs ?? 0) * 3600000;
         const remainingMs = capMs - otherMs.ms;
@@ -278,15 +295,12 @@ async function checkCaps(db: Database.Database): Promise<void> {
         // Stop running timer at the cap-hit time (backdate)
         // Close open segment first
         db.prepare(
-          `UPDATE timer_segments SET ended = ?, duration_ms = MAX(0, CAST((julianday(?) - julianday(started)) * 86400000 AS INTEGER)), updated_at = datetime('now')
+          `UPDATE timer_segments SET ended = ?, updated_at = datetime('now')
            WHERE timer_id = ? AND ended IS NULL`,
-        ).run(roundedCapHit, roundedCapHit, running.id);
-        const totalMs = db.prepare(
-          `SELECT COALESCE(SUM(duration_ms), 0) as ms FROM timer_segments WHERE timer_id = ?`,
-        ).get(running.id) as { ms: number };
+        ).run(roundedCapHit, running.id);
         db.prepare(
-          `UPDATE timers SET state = 'stopped', ended = ?, duration_ms = ?, updated_at = datetime('now') WHERE id = ?`,
-        ).run(roundedCapHit, totalMs.ms, running.id);
+          `UPDATE timers SET state = 'stopped', ended = ?, updated_at = datetime('now') WHERE id = ?`,
+        ).run(roundedCapHit, running.id);
         const stopped = timersDb.findById(db, running.id)!;
         broadcast('timer:stopped', stopped);
         sendNotification('Autocap', `Stopped ${stopped.slug} at cap (${project.daily_cap_hrs}h)`);
@@ -301,8 +315,8 @@ async function checkCaps(db: Database.Database): Promise<void> {
           ended: new Date().toISOString(),
         });
         // Re-open it as running
-        db.prepare(`UPDATE timers SET state = 'running', ended = NULL, duration_ms = NULL, updated_at = datetime('now') WHERE id = ?`).run(overflow.id);
-        db.prepare(`UPDATE timer_segments SET ended = NULL, duration_ms = NULL, updated_at = datetime('now') WHERE timer_id = ? ORDER BY started DESC LIMIT 1`).run(overflow.id);
+        db.prepare(`UPDATE timers SET state = 'running', ended = NULL, updated_at = datetime('now') WHERE id = ?`).run(overflow.id);
+        db.prepare(`UPDATE timer_segments SET ended = NULL, updated_at = datetime('now') WHERE timer_id = ? ORDER BY started DESC LIMIT 1`).run(overflow.id);
         const overflowRunning = timersDb.findById(db, overflow.id)!;
         broadcast('timer:started', overflowRunning);
         sendNotification('Autocap', `Started ${overflowRunning.slug} on overflow project`);
@@ -323,8 +337,12 @@ export function getAutocapStatus(db: Database.Database): AutocapStatus | null {
   // Calculate today's total for this project
   const { dateStr: todayPT } = pacificNow();
   const row = db.prepare(`
-    SELECT COALESCE(SUM(duration_ms), 0) / 3600000.0 AS hrs
-    FROM timers WHERE substr(started, 1, 10) = ? AND project_id = ?
+    SELECT COALESCE(SUM(
+      CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
+    ), 0) / 3600000.0 AS hrs
+    FROM timers t
+    JOIN timer_segments ts ON ts.timer_id = t.id
+    WHERE substr(t.started, 1, 10) = ? AND t.project_id = ?
   `).get(todayPT, running.project_id) as { hrs: number };
 
   const completedHrs = row.hrs;

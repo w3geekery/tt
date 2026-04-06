@@ -71,7 +71,6 @@ CREATE TABLE IF NOT EXISTS timers (
   started TEXT,
   ended TEXT,
   stop_at TEXT,
-  duration_ms INTEGER,
   notes TEXT,
   notify_on_switch INTEGER DEFAULT 0,
   external_task TEXT,
@@ -85,7 +84,6 @@ CREATE TABLE IF NOT EXISTS timer_segments (
   timer_id TEXT NOT NULL REFERENCES timers(id) ON DELETE CASCADE,
   started TEXT NOT NULL,
   ended TEXT,
-  duration_ms INTEGER,
   notes TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
@@ -120,6 +118,19 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS favorite_templates (
+  id TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+  company_id TEXT NOT NULL REFERENCES companies(id),
+  project_id TEXT REFERENCES projects(id),
+  task_id TEXT REFERENCES tasks(id),
+  sort_order INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_favorite_templates_combo
+  ON favorite_templates (company_id, COALESCE(project_id, ''), COALESCE(task_id, ''));
+
 CREATE TABLE IF NOT EXISTS weekly_tasks (
   week_start TEXT NOT NULL,
   company TEXT NOT NULL,
@@ -134,4 +145,28 @@ CREATE TABLE IF NOT EXISTS weekly_tasks (
 
 export function applySchema(db: Database.Database): void {
   db.exec(SCHEMA);
+
+  // Migration: drop stored duration_ms columns (now always computed from timestamps)
+  const timerCols = db.pragma('table_info(timers)') as Array<{ name: string }>;
+  if (timerCols.some(c => c.name === 'duration_ms')) {
+    db.exec('ALTER TABLE timers DROP COLUMN duration_ms');
+  }
+  const segCols = db.pragma('table_info(timer_segments)') as Array<{ name: string }>;
+  if (segCols.some(c => c.name === 'duration_ms')) {
+    db.exec('ALTER TABLE timer_segments DROP COLUMN duration_ms');
+  }
+
+  // One-time fix: sync single-segment timers so segment timestamps match timer timestamps.
+  // Prevents stale segment data from producing wrong computed durations.
+  db.exec(`
+    UPDATE timer_segments SET
+      started = (SELECT started FROM timers WHERE id = timer_segments.timer_id),
+      ended = (SELECT ended FROM timers WHERE id = timer_segments.timer_id),
+      updated_at = datetime('now')
+    WHERE timer_id IN (
+      SELECT timer_id FROM timer_segments GROUP BY timer_id HAVING COUNT(*) = 1
+    ) AND timer_id IN (
+      SELECT id FROM timers WHERE state = 'stopped' AND started IS NOT NULL AND ended IS NOT NULL
+    )
+  `);
 }

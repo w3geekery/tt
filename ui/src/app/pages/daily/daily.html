@@ -78,11 +78,34 @@
       </mat-chip-set>
     }
 
-    <!-- Add Timer Button -->
+    <!-- Add Timer Split Button -->
     <div class="add-timer">
-      <button mat-raised-button color="primary" (click)="addTimer()">
-        <mat-icon>add</mat-icon> New Timer
-      </button>
+      <div class="split-button">
+        <button mat-raised-button color="primary" (click)="addTimer()">
+          <mat-icon>add</mat-icon> New Timer
+        </button>
+        @if (favorites().length > 0) {
+          <button mat-raised-button color="primary" class="split-caret" [matMenuTriggerFor]="favoritesMenu">
+            <mat-icon>arrow_drop_down</mat-icon>
+          </button>
+        }
+      </div>
+      <mat-menu #favoritesMenu="matMenu" class="favorites-menu" (closed)="selectedFavorite.set(null)">
+        @for (fav of favorites(); track fav.id) {
+          <button mat-menu-item [class.selected-favorite]="selectedFavorite()?.id === fav.id" (click)="selectFavorite(fav); $event.stopPropagation()">
+            <span class="fav-company-dot" [style.background]="fav.company_color || '#888'"></span>
+            <span class="fav-label">{{ fav.company_name }}{{ fav.project_name ? ' / ' + fav.project_name : '' }}{{ fav.task_name ? ' / ' + fav.task_name : '' }}</span>
+          </button>
+        }
+        <div class="favorites-actions">
+          <button mat-button [disabled]="!selectedFavorite()" (click)="startFromFavorite()">
+            <mat-icon>play_arrow</mat-icon> Start
+          </button>
+          <button mat-button [disabled]="!selectedFavorite()" (click)="scheduleFromFavorite()">
+            <mat-icon>schedule</mat-icon> Schedule
+          </button>
+        </div>
+      </mat-menu>
     </div>
 
     <!-- Active / Upcoming Timers -->
@@ -96,6 +119,8 @@
         (onTimeUpdate)="updateTimerTime($event)"
         (onDelete)="deleteTimer($event)"
         (onUpdate)="updateTimer($event)"
+        [isFavorite]="isFavoriteTimer(timer)"
+        (onToggleFavorite)="toggleFavorite($event)"
       />
     }
 
@@ -119,6 +144,8 @@
         (onTimeUpdate)="updateTimerTime($event)"
         (onDelete)="deleteTimer($event)"
         (onUpdate)="updateTimer($event)"
+        [isFavorite]="isFavoriteTimer(timer)"
+        (onToggleFavorite)="toggleFavorite($event)"
       />
     }
 

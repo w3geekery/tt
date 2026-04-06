@@ -53,8 +53,11 @@ export function cancel(db: Database.Database, id: string): boolean {
 
 function mapRow(row: unknown): Notification {
   const r = row as Record<string, unknown>;
+  const dismissed = r.dismissed === 1;
+  const status = dismissed ? 'dismissed' : r.fired_at ? 'fired' : 'pending';
   return {
     ...r,
-    dismissed: r.dismissed === 1,
+    dismissed,
+    status,
   } as Notification;
 }

@@ -89,6 +89,52 @@
   margin-bottom: 16px;
 }
 
+.split-button {
+  display: inline-flex;
+
+  button:first-child {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  .split-caret {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    min-width: 36px;
+    padding: 0 4px;
+    margin-left: 1px;
+
+    mat-icon {
+      margin: 0;
+    }
+  }
+}
+
+.fav-company-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.fav-label {
+  font-size: 0.875rem;
+}
+
+.selected-favorite {
+  background: var(--mat-sys-primary-container);
+}
+
+.favorites-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--mat-sys-outline-variant);
+}
+
 .history-divider {
   display: flex;
   align-items: center;

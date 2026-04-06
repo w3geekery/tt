@@ -68,10 +68,25 @@ export interface TimerSegment {
   timer_id: string;
   started: string;
   ended?: string | null;
-  duration_ms?: number | null;
   notes?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface FavoriteTemplate {
+  id: string;
+  company_id: string;
+  project_id?: string | null;
+  task_id?: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  // Joined fields (from findAll)
+  company_name?: string;
+  company_color?: string | null;
+  project_name?: string | null;
+  project_color?: string | null;
+  task_name?: string | null;
 }
 
 export type RecurringPattern = 'daily' | 'weekdays' | 'weekly';
@@ -102,6 +117,7 @@ export interface Notification {
   trigger_at: string;
   fired_at?: string | null;
   dismissed: boolean;
+  status: 'pending' | 'fired' | 'dismissed';
   created_at: string;
 }
 

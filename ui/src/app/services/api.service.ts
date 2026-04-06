@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Company, Project, Task } from '../models';
+import { Company, Project, Task, FavoriteTemplate } from '../models';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -62,6 +62,23 @@ export class ApiService {
   // Segments
   patchSegmentNotes(timerId: string, segmentId: string, notes: string) {
     return this.http.patch(`/api/timers/${timerId}/segments/${segmentId}`, { notes });
+  }
+
+  // Favorites
+  getFavorites() {
+    return this.http.get<FavoriteTemplate[]>('/api/favorites');
+  }
+
+  createFavorite(companyId: string, projectId?: string | null, taskId?: string | null) {
+    return this.http.post<FavoriteTemplate>('/api/favorites', {
+      company_id: companyId,
+      project_id: projectId ?? null,
+      task_id: taskId ?? null,
+    });
+  }
+
+  deleteFavorite(id: string) {
+    return this.http.delete(`/api/favorites/${id}`);
   }
 
   // Weekly Tasks

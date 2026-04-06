@@ -236,7 +236,6 @@ describe('Timers', () => {
 
     const segments = timers.getSegments(db, entry.id);
     expect(segments).toHaveLength(1);
-    expect(segments[0].duration_ms).toBe(90 * 60 * 1000);
   });
 
   it('throws on invalid state transitions', () => {

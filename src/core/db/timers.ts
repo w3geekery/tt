@@ -23,6 +23,7 @@ export interface CreateTimerInput {
 }
 
 export interface UpdateTimerInput {
+  company_id?: string | null;
   project_id?: string | null;
   task_id?: string | null;
   start_at?: string | null;
@@ -34,33 +35,39 @@ export interface UpdateTimerInput {
   external_task?: Record<string, unknown> | null;
 }
 
+// Correlated subquery that computes duration_ms from segment timestamps.
+// Replaces the dropped duration_ms column — always derived, never stored.
+const DURATION_SUBQUERY = `(SELECT COALESCE(SUM(
+  CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
+), 0) FROM timer_segments ts WHERE ts.timer_id = timers.id) as duration_ms`;
+
 // --- Timer CRUD ---
 
 export function findAll(db: Database.Database): Timer[] {
-  return db.prepare('SELECT * FROM timers ORDER BY created_at DESC').all().map(mapTimer);
+  return db.prepare(`SELECT *, ${DURATION_SUBQUERY} FROM timers ORDER BY created_at DESC`).all().map(mapTimer);
 }
 
 export function findById(db: Database.Database, id: string): Timer | undefined {
-  const row = db.prepare('SELECT * FROM timers WHERE id = ?').get(id);
+  const row = db.prepare(`SELECT *, ${DURATION_SUBQUERY} FROM timers WHERE id = ?`).get(id);
   return row ? mapTimer(row) : undefined;
 }
 
 export function findBySlug(db: Database.Database, slug: string): Timer | undefined {
-  const row = db.prepare('SELECT * FROM timers WHERE slug = ?').get(slug);
+  const row = db.prepare(`SELECT *, ${DURATION_SUBQUERY} FROM timers WHERE slug = ?`).get(slug);
   return row ? mapTimer(row) : undefined;
 }
 
 export function findRunning(db: Database.Database): Timer | undefined {
-  const row = db.prepare("SELECT * FROM timers WHERE state = 'running' LIMIT 1").get();
+  const row = db.prepare(`SELECT *, ${DURATION_SUBQUERY} FROM timers WHERE state = 'running' LIMIT 1`).get();
   return row ? mapTimer(row) : undefined;
 }
 
 export function findByDate(db: Database.Database, dateStr: string): Timer[] {
   return db
     .prepare(
-      `SELECT * FROM timers
-       WHERE date(started) = date(?)
-          OR (started IS NULL AND substr(created_at, 1, 10) = ?)
+      `SELECT *, ${DURATION_SUBQUERY} FROM timers
+       WHERE date(started, '-7 hours') = date(?)
+          OR (started IS NULL AND date(created_at, '-7 hours') = date(?))
        ORDER BY started`,
     )
     .all(dateStr, dateStr)
@@ -113,6 +120,24 @@ export function update(db: Database.Database, id: string, input: UpdateTimerInpu
   values.push(id);
 
   db.prepare(`UPDATE timers SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+
+  // When timer times are edited, sync to the corresponding segment
+  // so computed durations stay consistent with displayed times
+  if (input.started !== undefined && input.started) {
+    const rounded = roundTo15(input.started);
+    db.prepare(
+      `UPDATE timer_segments SET started = ?, updated_at = datetime('now')
+       WHERE id = (SELECT id FROM timer_segments WHERE timer_id = ? ORDER BY started ASC LIMIT 1)`,
+    ).run(rounded, id);
+  }
+  if (input.ended !== undefined && input.ended) {
+    const rounded = roundTo15(input.ended);
+    db.prepare(
+      `UPDATE timer_segments SET ended = ?, updated_at = datetime('now')
+       WHERE id = (SELECT id FROM timer_segments WHERE timer_id = ? ORDER BY started DESC LIMIT 1)`,
+    ).run(rounded, id);
+  }
+
   return findById(db, id);
 }
 
@@ -137,12 +162,12 @@ export function start(db: Database.Database, id: string): Timer {
     stop(db, running.id);
   }
 
-  // Timer-level started uses rounded time; segment uses exact time
+  // Timer-level started uses rounded time; segment also uses rounded time
   db.prepare(
     `UPDATE timers SET state = 'running', started = COALESCE(started, ?), updated_at = ? WHERE id = ?`,
   ).run(roundedNow, exactNow, id);
 
-  createSegment(db, id, exactNow);
+  createSegment(db, id, roundedNow);
 
   return findById(db, id)!;
 }
@@ -155,16 +180,13 @@ export function stop(db: Database.Database, id: string): Timer {
   const exactNow = new Date().toISOString();
   const roundedNow = roundTo15(exactNow);
 
-  // Close open segment with exact time
-  closeOpenSegment(db, id, exactNow);
-
-  // Calculate total duration from all segments
-  const totalMs = getTotalDuration(db, id);
+  // Close open segment with rounded time so durations align to 15-min grid
+  closeOpenSegment(db, id, roundedNow);
 
   // Timer-level ended uses rounded time
   db.prepare(
-    `UPDATE timers SET state = 'stopped', ended = ?, duration_ms = ?, updated_at = ? WHERE id = ?`,
-  ).run(roundedNow, totalMs, exactNow, id);
+    `UPDATE timers SET state = 'stopped', ended = ?, updated_at = ? WHERE id = ?`,
+  ).run(roundedNow, exactNow, id);
 
   return findById(db, id)!;
 }
@@ -175,9 +197,10 @@ export function pause(db: Database.Database, id: string): Timer {
   if (timer.state !== 'running') throw new Error(`Timer ${id} is not running`);
 
   const now = new Date().toISOString();
+  const roundedNow = roundTo15(now);
 
-  // Close open segment
-  closeOpenSegment(db, id, now);
+  // Close open segment with rounded time so break durations align to 15-min grid
+  closeOpenSegment(db, id, roundedNow);
 
   db.prepare(
     `UPDATE timers SET state = 'paused', updated_at = ? WHERE id = ?`,
@@ -192,6 +215,7 @@ export function resume(db: Database.Database, id: string): Timer {
   if (timer.state !== 'paused') throw new Error(`Timer ${id} is not paused`);
 
   const now = new Date().toISOString();
+  const roundedNow = roundTo15(now);
 
   // Stop any currently running timer first
   const running = findRunning(db);
@@ -203,8 +227,8 @@ export function resume(db: Database.Database, id: string): Timer {
     `UPDATE timers SET state = 'running', updated_at = ? WHERE id = ?`,
   ).run(now, id);
 
-  // Create a new segment
-  createSegment(db, id, now);
+  // Create a new segment with rounded time so autocap cutover boundaries align
+  createSegment(db, id, roundedNow);
 
   return findById(db, id)!;
 }
@@ -238,17 +262,6 @@ export function updateSegment(db: Database.Database, segmentId: string, input: {
   if (input.notes !== undefined) { fields.push('notes = ?'); values.push(input.notes); }
   if (fields.length === 0) return segment;
 
-  // Recalculate duration if times changed
-  if (input.started !== undefined || input.ended !== undefined) {
-    const s = input.started ?? (segment.started as string);
-    const e = input.ended ?? (segment.ended as string | null);
-    if (s && e) {
-      const ms = new Date(e).getTime() - new Date(s).getTime();
-      fields.push('duration_ms = ?');
-      values.push(ms);
-    }
-  }
-
   fields.push("updated_at = datetime('now')");
   values.push(segmentId);
   db.prepare(`UPDATE timer_segments SET ${fields.join(', ')} WHERE id = ?`).run(...values);
@@ -270,19 +283,29 @@ function closeOpenSegment(db: Database.Database, timerId: string, ended: string)
     .get(timerId) as TimerSegment | undefined;
 
   if (segment) {
-    const durationMs = new Date(ended).getTime() - new Date(segment.started).getTime();
     db.prepare(
-      `UPDATE timer_segments SET ended = ?, duration_ms = ?, updated_at = ? WHERE id = ?`,
-    ).run(ended, durationMs, ended, segment.id);
+      `UPDATE timer_segments SET ended = ?, updated_at = ? WHERE id = ?`,
+    ).run(ended, ended, segment.id);
   }
 }
 
-function getTotalDuration(db: Database.Database, timerId: string): number {
-  const row = db
-    .prepare('SELECT COALESCE(SUM(duration_ms), 0) as total FROM timer_segments WHERE timer_id = ?')
-    .get(timerId) as { total: number };
+/** Compute total active duration for a timer from segment timestamps. Never uses stored duration_ms. */
+export function computeDuration(db: Database.Database, timerId: string): number {
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(
+      CAST((julianday(COALESCE(ended, datetime('now'))) - julianday(started)) * 86400000 AS INTEGER)
+    ), 0) as total
+    FROM timer_segments WHERE timer_id = ?
+  `).get(timerId) as { total: number };
   return row.total;
 }
+
+/**
+ * SQL fragment: compute segment duration in ms from timestamps.
+ * Use with timer_segments aliased as `ts`.
+ * Handles open segments (running) via COALESCE with datetime('now').
+ */
+export const SEG_DURATION_EXPR = `CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)`;
 
 // --- Manual entry ---
 
@@ -291,13 +314,12 @@ export function addEntry(db: Database.Database, input: CreateTimerInput & { star
   const roundedStarted = roundTo15(input.started);
   const roundedEnded = roundTo15(input.ended);
   const slug = generateSlug(db, new Date(roundedStarted));
-  const durationMs = new Date(roundedEnded).getTime() - new Date(roundedStarted).getTime();
   const now = new Date().toISOString();
 
   db.prepare(
     `INSERT INTO timers (id, company_id, project_id, task_id, slug, state, started, ended,
-      duration_ms, notes, notify_on_switch, external_task, recurring_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 'stopped', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      notes, notify_on_switch, external_task, recurring_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'stopped', ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.company_id,
@@ -306,7 +328,6 @@ export function addEntry(db: Database.Database, input: CreateTimerInput & { star
     slug,
     roundedStarted,
     roundedEnded,
-    durationMs,
     input.notes ?? null,
     input.notify_on_switch ? 1 : 0,
     input.external_task ? JSON.stringify(input.external_task) : null,
@@ -317,11 +338,10 @@ export function addEntry(db: Database.Database, input: CreateTimerInput & { star
 
   // Create a closed segment for the entry (exact times, not rounded)
   const segId = randomUUID().replace(/-/g, '').toUpperCase();
-  const segDurationMs = new Date(input.ended).getTime() - new Date(input.started).getTime();
   db.prepare(
-    `INSERT INTO timer_segments (id, timer_id, started, ended, duration_ms, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(segId, id, input.started, input.ended, segDurationMs, now, now);
+    `INSERT INTO timer_segments (id, timer_id, started, ended, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(segId, id, input.started, input.ended, now, now);
 
   return findById(db, id)!;
 }

@@ -88,20 +88,26 @@ capStatusRouter.get('/', (req: Request, res: Response) => {
   const projects = db.prepare(query).all() as any[];
 
   const projectStatuses: ProjectCapStatus[] = projects.map(p => {
-    // Calculate daily hours
+    // Calculate daily hours from segment timestamps (handles pause/resume)
     const dailyQuery = `
-      SELECT COALESCE(SUM(duration_ms), 0) / 3600000.0 as hrs
-      FROM timers
-      WHERE project_id = ? AND date(started) = date(?)
+      SELECT COALESCE(SUM(
+        CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
+      ), 0) / 3600000.0 as hrs
+      FROM timers t
+      JOIN timer_segments ts ON ts.timer_id = t.id
+      WHERE t.project_id = ? AND date(t.started) = date(?)
     `;
     const dailyResult = db.prepare(dailyQuery).get(p.id, dateStr) as any;
     const dailyLogged = dailyResult?.hrs || 0;
 
-    // Calculate weekly hours
+    // Calculate weekly hours from segment timestamps
     const weeklyQuery = `
-      SELECT COALESCE(SUM(duration_ms), 0) / 3600000.0 as hrs
-      FROM timers
-      WHERE project_id = ? AND date(started) BETWEEN date(?) AND date(?)
+      SELECT COALESCE(SUM(
+        CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
+      ), 0) / 3600000.0 as hrs
+      FROM timers t
+      JOIN timer_segments ts ON ts.timer_id = t.id
+      WHERE t.project_id = ? AND date(t.started) BETWEEN date(?) AND date(?)
     `;
     const weeklyResult = db.prepare(weeklyQuery).get(p.id, weekStartStr, weekEndStr) as any;
     const weeklyLogged = weeklyResult?.hrs || 0;

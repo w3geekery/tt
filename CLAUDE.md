@@ -69,6 +69,50 @@ This project replaces `timetracker-ui` (`~/Projects/w3geekery/timetracker-ui/`).
 | MCP name | `timetracker` | `tt` |
 | Slash command | `/ttui` | `/tt` |
 
+## Guardrails
+
+### Timer Operations — MANDATORY CHECKLIST
+
+Before starting, stopping, or switching ANY timer:
+1. **Query first, never guess.** Use `mcp__tt__list_projects` or `mcp__tt__list_companies` to get IDs. NEVER copy IDs from earlier in the conversation.
+2. **Check overflow settings.** If a project has `overflow_company_id`/`overflow_project_id`/`overflow_task_id`, use those when switching after a cap hit.
+3. **Verify after.** After any timer operation, confirm the result shows the correct company/project/task names.
+4. **Prefer autocap.** If the cron system should handle a switch automatically, let it. Don't manually replicate what autocap does.
+
+### Data Access — USE MCP TOOLS
+
+- **Always use `mcp__tt__*` tools** for reading tt data. Never use `curl` against the Express API.
+- If a needed MCP tool doesn't exist, **add it to the MCP server** rather than working around it.
+
+### Time Values — ALWAYS ROUND
+
+- All user-facing times must be rounded to **15-minute increments**.
+- This applies to meeting summaries, timer notes, session recaps — everything.
+
+### Before Acting on Any tt Data
+
+- **Read the project/company/task names**, not just IDs.
+- **Cross-check assumptions** against the actual database state.
+- **Never assume** which project a timer belongs to based on position in a list.
+
+## Building
+
+The project has **three separate build targets**:
+
+```bash
+npm run build            # Core (tsc) + Angular UI → dist/
+npm run build:mcp        # MCP server → dist/mcp/ (uses tsconfig.mcp.json)
+```
+
+**After any change to `src/core/`**, run BOTH:
+```bash
+npm run build && npm run build:mcp
+```
+
+The MCP server (`dist/mcp/src/core/mcp/index.js`) imports from `src/core/db/`, `src/core/types.ts`, etc. If you only run `npm run build`, the MCP process still loads stale code from `dist/mcp/` and will break.
+
+After building the MCP, **restart Claude Code** so the MCP stdio process reloads.
+
 ## Testing
 
 - Framework: Vitest

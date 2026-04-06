@@ -24,6 +24,9 @@ function freshDb(): Database.Database {
   return db;
 }
 
+/** Get today's date in Pacific Time (matches cron's pacificNow()). */
+const ptToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+
 describe('materializeRecurring', () => {
   let db: Database.Database;
   let companyId: string;
@@ -63,7 +66,7 @@ describe('materializeRecurring', () => {
   });
 
   it('skips dates in skipped_dates', () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = ptToday();
     const rec = recurringDb.create(db, {
       company_id: companyId,
       pattern: 'daily',

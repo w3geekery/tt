@@ -21,6 +21,7 @@ import * as recurringDb from '../db/recurring.js';
 import * as notificationsDb from '../db/notifications.js';
 import * as specstoryDb from '../db/specstory.js';
 import * as weeklyTasksDb from '../db/weekly-tasks.js';
+import * as favoritesDb from '../db/favorites.js';
 import { loadExtensions, runHook } from '../extensions.js';
 import config from '../../../tt.config.js';
 
@@ -129,11 +130,13 @@ server.tool('add_entry', 'Add a manual time entry.', {
   return { content: [{ type: 'text', text: `Added entry ${timer.slug} — ${hrs}h` }] };
 });
 
-server.tool('update_timer', 'Update timer fields (notes, project, task, etc).', {
+server.tool('update_timer', 'Update timer fields (notes, project, task, times).', {
   timer_id: z.string().describe('Timer ID'),
   notes: z.string().optional().describe('Updated notes'),
   project_id: z.string().optional().describe('Updated project ID'),
   task_id: z.string().optional().describe('Updated task ID'),
+  started: z.string().optional().describe('Updated start time (ISO 8601)'),
+  ended: z.string().optional().describe('Updated end time (ISO 8601)'),
 }, async ({ timer_id, ...updates }) => {
   const db = getDb();
   const timer = timersDb.update(db, timer_id, updates);
@@ -149,6 +152,68 @@ server.tool('delete_timer', 'Delete a timer.', {
   return { content: [{ type: 'text', text: ok ? 'Timer deleted' : 'Timer not found' }] };
 });
 
+// --- Segment tools ---
+
+server.tool('list_segments', 'List all segments for a timer.', {
+  timer_id: z.string().describe('Timer ID'),
+}, async ({ timer_id }) => {
+  const db = getDb();
+  const segments = timersDb.getSegments(db, timer_id);
+  if (segments.length === 0) return { content: [{ type: 'text', text: 'No segments found' }] };
+  return { content: [{ type: 'text', text: JSON.stringify(segments, null, 2) }] };
+});
+
+server.tool('update_segment', 'Update a segment\'s start time, end time, or notes.', {
+  segment_id: z.string().describe('Segment ID'),
+  started: z.string().optional().describe('Updated start time (ISO 8601)'),
+  ended: z.string().optional().describe('Updated end time (ISO 8601)'),
+  notes: z.string().optional().describe('Updated notes'),
+}, async ({ segment_id, ...updates }) => {
+  const db = getDb();
+  const segment = timersDb.updateSegment(db, segment_id, updates);
+  if (!segment) return { content: [{ type: 'text', text: 'Segment not found' }] };
+  return { content: [{ type: 'text', text: JSON.stringify(segment, null, 2) }] };
+});
+
+server.tool('delete_segment', 'Delete a segment from a timer.', {
+  segment_id: z.string().describe('Segment ID'),
+}, async ({ segment_id }) => {
+  const db = getDb();
+  const segment = db.prepare('SELECT * FROM timer_segments WHERE id = ?').get(segment_id);
+  if (!segment) return { content: [{ type: 'text', text: 'Segment not found' }] };
+  db.prepare('DELETE FROM timer_segments WHERE id = ?').run(segment_id);
+  return { content: [{ type: 'text', text: 'Segment deleted' }] };
+});
+
+// --- Favorite template tools ---
+
+server.tool('list_favorites', 'List all favorite timer templates.', {}, async () => {
+  const db = getDb();
+  const favs = favoritesDb.findAll(db);
+  if (favs.length === 0) return { content: [{ type: 'text', text: 'No favorites saved' }] };
+  return { content: [{ type: 'text', text: JSON.stringify(favs, null, 2) }] };
+});
+
+server.tool('create_favorite', 'Save a company/project/task combo as a favorite template.', {
+  company_id: z.string().describe('Company ID'),
+  project_id: z.string().optional().describe('Project ID'),
+  task_id: z.string().optional().describe('Task ID'),
+}, async ({ company_id, project_id, task_id }) => {
+  const db = getDb();
+  const existing = favoritesDb.findByTemplate(db, company_id, project_id, task_id);
+  if (existing) return { content: [{ type: 'text', text: 'Already a favorite' }] };
+  const fav = favoritesDb.create(db, { company_id, project_id, task_id });
+  return { content: [{ type: 'text', text: `Created favorite ${fav.id}` }] };
+});
+
+server.tool('delete_favorite', 'Remove a favorite template.', {
+  favorite_id: z.string().describe('Favorite template ID'),
+}, async ({ favorite_id }) => {
+  const db = getDb();
+  const ok = favoritesDb.remove(db, favorite_id);
+  return { content: [{ type: 'text', text: ok ? 'Favorite removed' : 'Favorite not found' }] };
+});
+
 // --- Summary tools ---
 
 server.tool('daily_summary', 'Get a summary of time tracked today or for a specific date.', {
@@ -157,19 +222,24 @@ server.tool('daily_summary', 'Get a summary of time tracked today or for a speci
   const db = getDb();
   const dateStr = date ?? ptDate();
   const rows = db.prepare(`
-    SELECT t.*, c.name as company_name, p.name as project_name
+    SELECT t.*, c.name as company_name, p.name as project_name,
+           COALESCE(SUM(
+             CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
+           ), 0) as computed_ms
     FROM timers t
     LEFT JOIN companies c ON c.id = t.company_id
     LEFT JOIN projects p ON p.id = t.project_id
+    LEFT JOIN timer_segments ts ON ts.timer_id = t.id
     WHERE date(t.started) = date(?)
+    GROUP BY t.id
     ORDER BY t.started
   `).all(dateStr) as Array<Record<string, unknown>>;
 
-  const totalMs = rows.reduce((sum, r) => sum + ((r.duration_ms as number) ?? 0), 0);
+  const totalMs = rows.reduce((sum, r) => sum + ((r.computed_ms as number) ?? 0), 0);
   const totalHrs = (totalMs / 3600000).toFixed(2);
 
   const lines = rows.map(r => {
-    const hrs = ((r.duration_ms as number ?? 0) / 3600000).toFixed(2);
+    const hrs = ((r.computed_ms as number ?? 0) / 3600000).toFixed(2);
     return `${r.slug} | ${r.company_name} / ${r.project_name ?? '—'} | ${hrs}h | ${r.state} | ${r.notes ?? ''}`;
   });
 
@@ -180,10 +250,13 @@ server.tool('weekly_summary', 'Get a summary of time tracked this week.', {}, as
   const db = getDb();
   const rows = db.prepare(`
     SELECT c.name as company_name, p.name as project_name,
-           SUM(t.duration_ms) as total_ms, COUNT(*) as timer_count
+           COALESCE(SUM(
+             CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
+           ), 0) as total_ms, COUNT(DISTINCT t.id) as timer_count
     FROM timers t
     LEFT JOIN companies c ON c.id = t.company_id
     LEFT JOIN projects p ON p.id = t.project_id
+    LEFT JOIN timer_segments ts ON ts.timer_id = t.id
     WHERE date(t.started) >= date('now', 'weekday 0', '-7 days')
     GROUP BY t.company_id, t.project_id
     ORDER BY total_ms DESC
@@ -205,10 +278,13 @@ server.tool('monthly_summary', 'Get a summary of time tracked this month.', {
   const monthStr = month ?? ptMonth();
   const rows = db.prepare(`
     SELECT c.name as company_name, p.name as project_name,
-           SUM(t.duration_ms) as total_ms, COUNT(*) as timer_count
+           COALESCE(SUM(
+             CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
+           ), 0) as total_ms, COUNT(DISTINCT t.id) as timer_count
     FROM timers t
     LEFT JOIN companies c ON c.id = t.company_id
     LEFT JOIN projects p ON p.id = t.project_id
+    LEFT JOIN timer_segments ts ON ts.timer_id = t.id
     WHERE strftime('%Y-%m', t.started) = ?
     GROUP BY t.company_id, t.project_id
     ORDER BY total_ms DESC
@@ -229,14 +305,22 @@ server.tool('get_cap_status', 'Get daily/weekly cap progress for all capped proj
   const db = getDb();
   const rows = db.prepare(`
     WITH daily_totals AS (
-      SELECT project_id, COALESCE(SUM(duration_ms), 0) / 3600000.0 AS hrs
-      FROM timers WHERE date(started) = date('now') AND project_id IS NOT NULL
-      GROUP BY project_id
+      SELECT t.project_id, COALESCE(SUM(
+        CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
+      ), 0) / 3600000.0 AS hrs
+      FROM timers t
+      JOIN timer_segments ts ON ts.timer_id = t.id
+      WHERE date(t.started) = date('now') AND t.project_id IS NOT NULL
+      GROUP BY t.project_id
     ),
     weekly_totals AS (
-      SELECT project_id, COALESCE(SUM(duration_ms), 0) / 3600000.0 AS hrs
-      FROM timers WHERE date(started) >= date('now', 'weekday 0', '-7 days') AND project_id IS NOT NULL
-      GROUP BY project_id
+      SELECT t.project_id, COALESCE(SUM(
+        CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
+      ), 0) / 3600000.0 AS hrs
+      FROM timers t
+      JOIN timer_segments ts ON ts.timer_id = t.id
+      WHERE date(t.started) >= date('now', 'weekday 0', '-7 days') AND t.project_id IS NOT NULL
+      GROUP BY t.project_id
     )
     SELECT p.name as project_name, c.name as company_name,
            p.daily_cap_hrs, p.weekly_cap_hrs,
@@ -424,21 +508,26 @@ server.tool('invoice_report', 'Generate invoice data for a company/project over 
   }
 
   const rows = db.prepare(`
-    SELECT t.*, c.name as company_name, p.name as project_name, tk.name as task_name
+    SELECT t.*, c.name as company_name, p.name as project_name, tk.name as task_name,
+           COALESCE(SUM(
+             CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
+           ), 0) as computed_ms
     FROM timers t
     LEFT JOIN companies c ON c.id = t.company_id
     LEFT JOIN projects p ON p.id = t.project_id
     LEFT JOIN tasks tk ON tk.id = t.task_id
+    LEFT JOIN timer_segments ts ON ts.timer_id = t.id
     WHERE t.company_id = ? AND date(t.started) >= date(?) AND date(t.started) <= date(?)
     ${projectFilter}
+    GROUP BY t.id
     ORDER BY t.started
   `).all(...params) as Array<Record<string, unknown>>;
 
-  const totalMs = rows.reduce((sum, r) => sum + ((r.duration_ms as number) ?? 0), 0);
+  const totalMs = rows.reduce((sum, r) => sum + ((r.computed_ms as number) ?? 0), 0);
   const totalHrs = (totalMs / 3600000).toFixed(2);
 
   const lines = rows.map(r => {
-    const hrs = ((r.duration_ms as number ?? 0) / 3600000).toFixed(2);
+    const hrs = ((r.computed_ms as number ?? 0) / 3600000).toFixed(2);
     const date = (r.started as string)?.slice(0, 10) ?? '—';
     return `${date} | ${r.slug} | ${r.project_name ?? '—'} | ${r.task_name ?? '—'} | ${hrs}h | ${r.notes ?? ''}`;
   });
@@ -556,11 +645,14 @@ server.tool('list_weekly_tasks', 'List tasks used this week with hours.', {}, as
   const rows = db.prepare(`
     SELECT tk.name as task_name, tk.code as task_code, tk.url as task_url,
            c.name as company_name, p.name as project_name,
-           SUM(t.duration_ms) as total_ms, COUNT(*) as timer_count
+           COALESCE(SUM(
+             CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
+           ), 0) as total_ms, COUNT(DISTINCT t.id) as timer_count
     FROM timers t
     JOIN tasks tk ON tk.id = t.task_id
     LEFT JOIN companies c ON c.id = t.company_id
     LEFT JOIN projects p ON p.id = t.project_id
+    LEFT JOIN timer_segments ts ON ts.timer_id = t.id
     WHERE substr(t.started, 1, 10) >= ?
       AND t.task_id IS NOT NULL
     GROUP BY t.task_id

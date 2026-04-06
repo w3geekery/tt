@@ -45,21 +45,26 @@ export function aggregateInvoice(
   }
 
   const rows = db.prepare(`
-    SELECT t.slug, t.started, t.duration_ms, t.notes, t.project_id, t.task_id,
-           p.name as project_name, tk.name as task_name
+    SELECT t.slug, t.started, t.notes, t.project_id, t.task_id,
+           p.name as project_name, tk.name as task_name,
+           COALESCE(SUM(
+             CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
+           ), 0) as computed_ms
     FROM timers t
     LEFT JOIN projects p ON p.id = t.project_id
     LEFT JOIN tasks tk ON tk.id = t.task_id
+    LEFT JOIN timer_segments ts ON ts.timer_id = t.id
     WHERE t.company_id = ?
       AND date(t.started) >= date(?)
       AND date(t.started) <= date(?)
       AND t.state = 'stopped'
       ${projectFilter}
+    GROUP BY t.id
     ORDER BY t.started
   `).all(...params) as Array<Record<string, unknown>>;
 
   const lineItems: InvoiceLineItem[] = rows.map(r => {
-    const rawMs = (r.duration_ms as number) ?? 0;
+    const rawMs = (r.computed_ms as number) ?? 0;
     return {
       date: (r.started as string)?.slice(0, 10) ?? '',
       slug: r.slug as string,
@@ -75,7 +80,7 @@ export function aggregateInvoice(
   const totalRawMs = lineItems.reduce((sum, li) => sum + li.raw_ms, 0);
 
   const project = projectId ? projectsDb.findById(db, projectId) : undefined;
-  const timers = rows.map(r => ({ id: r.slug, duration_ms: r.duration_ms }) as unknown as Timer);
+  const timers = rows.map(r => ({ id: r.slug, duration_ms: r.computed_ms }) as unknown as Timer);
 
   return {
     data: {

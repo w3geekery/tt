@@ -86,6 +86,51 @@ describe('MCP tool logic: stop/pause/resume', () => {
   });
 });
 
+describe('MCP tool logic: segments', () => {
+  let db: Database.Database;
+  let companyId: string;
+
+  beforeEach(() => {
+    db = freshDb();
+    companyId = companiesDb.create(db, { name: 'Co' }).id;
+  });
+
+  it('lists segments for a timer', () => {
+    const timer = timersDb.create(db, { company_id: companyId });
+    timersDb.start(db, timer.id);
+    const segments = timersDb.getSegments(db, timer.id);
+    expect(segments).toHaveLength(1);
+    expect(segments[0].timer_id).toBe(timer.id);
+  });
+
+  it('updates segment start/end times', () => {
+    const timer = timersDb.create(db, { company_id: companyId });
+    timersDb.start(db, timer.id);
+    const segments = timersDb.getSegments(db, timer.id);
+
+    const updated = timersDb.updateSegment(db, segments[0].id, {
+      started: '2026-04-01T15:30:00.000Z',
+      ended: '2026-04-01T17:00:00.000Z',
+    });
+    expect(updated!.started).toBe('2026-04-01T15:30:00.000Z');
+    expect(updated!.ended).toBe('2026-04-01T17:00:00.000Z');
+  });
+
+  it('resume creates segment with rounded start time', () => {
+    const timer = timersDb.create(db, { company_id: companyId });
+    timersDb.start(db, timer.id);
+    timersDb.pause(db, timer.id);
+    timersDb.resume(db, timer.id);
+
+    const segments = timersDb.getSegments(db, timer.id);
+    expect(segments).toHaveLength(2);
+
+    // The resumed segment's start should be rounded to 15-min
+    const resumedStart = new Date(segments[1].started);
+    expect(resumedStart.getMinutes() % 15).toBe(0);
+  });
+});
+
 describe('MCP tool logic: daily_summary', () => {
   it('aggregates timers by date', () => {
     const db = freshDb();
@@ -106,18 +151,23 @@ describe('MCP tool logic: daily_summary', () => {
       ended: `${today}T14:00:00.000Z`,
     });
 
-    // Same query the MCP tool uses
+    // Same query the MCP tool uses — compute duration from segments
     const rows = db.prepare(`
-      SELECT t.*, c.name as company_name, p.name as project_name
+      SELECT t.*, c.name as company_name, p.name as project_name,
+             COALESCE(SUM(
+               CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
+             ), 0) as computed_ms
       FROM timers t
       LEFT JOIN companies c ON c.id = t.company_id
       LEFT JOIN projects p ON p.id = t.project_id
+      LEFT JOIN timer_segments ts ON ts.timer_id = t.id
       WHERE date(t.started) = date(?)
+      GROUP BY t.id
       ORDER BY t.started
     `).all(today) as Array<Record<string, unknown>>;
 
     expect(rows).toHaveLength(2);
-    const totalMs = rows.reduce((sum, r) => sum + ((r.duration_ms as number) ?? 0), 0);
+    const totalMs = rows.reduce((sum, r) => sum + ((r.computed_ms as number) ?? 0), 0);
     expect(totalMs / 3600000).toBe(2.5); // 1.5h + 1h
   });
 });
@@ -225,16 +275,21 @@ describe('MCP tool logic: invoice_report', () => {
 
     // Same query the MCP tool uses
     const rows = db.prepare(`
-      SELECT t.*, c.name as company_name, p.name as project_name
+      SELECT t.*, c.name as company_name, p.name as project_name,
+             COALESCE(SUM(
+               CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
+             ), 0) as computed_ms
       FROM timers t
       LEFT JOIN companies c ON c.id = t.company_id
       LEFT JOIN projects p ON p.id = t.project_id
+      LEFT JOIN timer_segments ts ON ts.timer_id = t.id
       WHERE t.company_id = ? AND date(t.started) >= date(?) AND date(t.started) <= date(?)
+      GROUP BY t.id
       ORDER BY t.started
     `).all(co.id, '2026-03-15', '2026-03-16') as Array<Record<string, unknown>>;
 
     expect(rows).toHaveLength(2);
-    const totalMs = rows.reduce((sum, r) => sum + ((r.duration_ms as number) ?? 0), 0);
-    expect(totalMs / 3600000).toBe(12); // 8h + 4h
+    const totalMs = rows.reduce((sum, r) => sum + ((r.computed_ms as number) ?? 0), 0);
+    expect(totalMs / 3600000).toBeCloseTo(12, 1); // 8h + 4h
   });
 });
