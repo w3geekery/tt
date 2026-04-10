@@ -1,15 +1,18 @@
 import type Database from 'better-sqlite3';
 import type { Company } from '../types.js';
 import { randomUUID } from 'node:crypto';
+import { generateEntitySlug } from './entity-slug.js';
 
 export interface CreateCompanyInput {
   name: string;
+  slug?: string | null;
   initials?: string | null;
   color?: string | null;
 }
 
 export interface UpdateCompanyInput {
   name?: string;
+  slug?: string | null;
   initials?: string | null;
   color?: string | null;
 }
@@ -22,13 +25,18 @@ export function findById(db: Database.Database, id: string): Company | undefined
   return db.prepare('SELECT * FROM companies WHERE id = ?').get(id) as Company | undefined;
 }
 
+export function findBySlug(db: Database.Database, slug: string): Company | undefined {
+  return db.prepare('SELECT * FROM companies WHERE slug = ? COLLATE NOCASE').get(slug) as Company | undefined;
+}
+
 export function create(db: Database.Database, input: CreateCompanyInput): Company {
   const id = randomUUID().replace(/-/g, '').toUpperCase();
+  const slug = input.slug || generateEntitySlug(db, 'companies', input.name);
   const now = new Date().toISOString();
   db.prepare(
-    `INSERT INTO companies (id, name, initials, color, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(id, input.name, input.initials ?? null, input.color ?? null, now, now);
+    `INSERT INTO companies (id, name, slug, initials, color, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, input.name, slug, input.initials ?? null, input.color ?? null, now, now);
   return findById(db, id)!;
 }
 
@@ -37,6 +45,7 @@ export function update(db: Database.Database, id: string, input: UpdateCompanyIn
   const values: unknown[] = [];
 
   if (input.name !== undefined) { fields.push('name = ?'); values.push(input.name); }
+  if (input.slug !== undefined) { fields.push('slug = ?'); values.push(input.slug); }
   if (input.initials !== undefined) { fields.push('initials = ?'); values.push(input.initials); }
   if (input.color !== undefined) { fields.push('color = ?'); values.push(input.color); }
 

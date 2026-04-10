@@ -26,27 +26,43 @@ Inherits from `/tt`:
 
 For each date in the requested range:
 
-### Step 1: Load Sessions from SQLite Cache
+### Step 1: Scan & Load Digest
 
-Query the SpecStory session cache via MCP:
-
-```
-mcp__tt__list_sessions({ date: "YYYY-MM-DD" })
-```
-
-Each session includes: `path`, `repo`, `company`, `started`, `summary`, `goal`, `outcome`, `commits` (JSON array), `pr_urls` (JSON array), `user_messages`, `agent_messages`.
-
-**If no cached sessions**, run the scanner first:
+**Always run the scanner first** to ensure the cache is populated:
 ```
 mcp__tt__scan_sessions({ date: "YYYY-MM-DD" })
 ```
-Then re-query with `list_sessions`. The scanner discovers sessions, extracts metadata, and upserts to SQLite automatically.
 
-**Commits and PRs are pre-cached** — no need for separate `git log` calls. Use the `commits` and `pr_urls` fields from the session data.
+Then call the daily digest — one compact call replaces all manual queries:
+```
+mcp__tt__daily_digest({ date: "YYYY-MM-DD" })
+```
+
+The digest returns ~2-3KB regardless of activity volume:
+- **Timer-aligned slots** — events already bucketed into timer time windows
+- **PT times formatted** — no UTC conversion needed
+- **Recaps in full** — high-value content preserved
+- **Commits summarized** — grouped by prefix (e.g., "42 commits: test x28, feat x8")
+- **PRs listed** — URLs per repo per slot
+- **0-duration timers filtered** — ghosts/cancelled timers excluded
+
+Each slot includes `timer_slug`, `company`, `project`, `task`, and a `repos` map with per-repo `recaps`, `prs`, `commit_count`, and `commit_summary`.
+
+**Fallback — two-pass sqlite3 query** (for debugging or if digest tool unavailable):
+
+Pass 1 — Recaps + PRs only (~20 rows):
+```
+sqlite3 ~/.tt/tt.db "SELECT e.event_type, e.timestamp, substr(e.content, 1, 150), s.repo FROM specstory_events e JOIN specstory_sessions s ON s.path = e.session_path WHERE e.date_pt = 'YYYY-MM-DD' AND e.event_type IN ('session_recap', 'pr') ORDER BY e.timestamp"
+```
+
+Pass 2 — Commits for uncovered gaps only:
+```
+sqlite3 ~/.tt/tt.db "SELECT e.event_type, e.timestamp, substr(e.content, 1, 80), s.repo FROM specstory_events e JOIN specstory_sessions s ON s.path = e.session_path WHERE e.date_pt = 'YYYY-MM-DD' AND e.event_type = 'commit' AND e.timestamp BETWEEN 'START_UTC' AND 'END_UTC' ORDER BY e.timestamp"
+```
 
 ### Step 2: Fetch Timers
 
-Call `mcp__tt__list_timers` with date filter. Filter to billable companies only (ZeroBias + W3Geekery). Exclude Sub Ek Yoga.
+The digest already includes timer context per slot. For additional timer details (notes, state), call `mcp__tt__list_timers` with date filter. Filter to billable companies only (ZeroBias + W3Geekery). Exclude Sub Ek Yoga.
 
 ### Step 3: Generate Proposed Notes
 
@@ -73,7 +89,9 @@ For each billable timer, generate notes using this priority order:
 | "General Development", "work", "dev", known generic patterns | **REPLACE** | Generated summary replaces |
 | "Overflow from ..." (cap spillover explanation) | **REPLACE** | Explains *why* timer exists, not *what was done* — replace |
 | Substantive (>10 chars, not generic/overflow) | **MERGE** | Append new bullets, deduplicate |
-| "Standup Meeting", "Marketplace Meeting" | **SKIP** | Keep as-is (substantive) |
+| "Standup Meeting" task | **REPLACE** | Write: `- Daily standup` |
+| "Friday Demo" task | **REPLACE** | Write: `- Friday demo with team` |
+| "Marketplace Meeting" | **SKIP** | Keep as-is (substantive) |
 | No sessions for date | **REVIEW** | Flag for manual review |
 
 Show dry-run preview table, then ask for approval.
@@ -92,7 +110,39 @@ All generated/proposed notes MUST be scannable markdown:
 - Use bullet points (`- item`), not a blob of text
 - Be specific and quantified ("migrated 22 specs", not "did some migration work")
 - Include PR numbers and test counts where available
-- **Group by repo** using `### Repo Name` headings when work spans multiple repos in a single timer
+- **Group by project** using `###` headings with `####` repo subheadings:
+  ```
+  ### SME Mart
+  #### repos: w3geekery/app, w3geekery/schema
+  - bullet points...
+
+  ### ZB UI
+  #### repos: zerobias-com/ui
+  - bullet points...
+  ```
+
+  **Domain separation** (Brian's "no cheating" directive):
+  - `~/Projects/zb/` — ZeroBias employee repos. Work here = ZB domain.
+  - `~/Projects/w3geekery/zerobias-org-forks/` — Forked clones of zerobias-org repos. Work here = W3Geekery domain (typically SME Mart).
+
+  **Scanner path → GitHub repo → Project mapping:**
+
+  | Scanner `s.repo` value | GitHub origin | Domain | Project |
+  |------------------------|---------------|--------|---------|
+  | `ui` | `zerobias-com/ui` | ZB | ZB UI (always) |
+  | `zerobias-org/*` (app, schema, etc.) | `zerobias-org/*` | ZB | ZB employee work |
+  | `zerobias-org-forks/app/package/w3geekery/sme-mart` | `w3geekery/app` | W3Geekery | SME Mart |
+  | `zerobias-org-forks/app` | `w3geekery/app` | W3Geekery | SME Mart |
+  | `zerobias-org-forks/schema` | `w3geekery/schema` | W3Geekery | SME Mart |
+
+  **Project attribution:**
+  - `zerobias-com/ui` → always `### ZB UI`
+  - `w3geekery/app` → always `### SME Mart`
+  - `w3geekery/schema` → always `### SME Mart`
+  - `zerobias-org/*` → `### ZB` (not necessarily UI — could be platform, schema CI, etc.)
+  - If uncertain, fall back to `### repo: <repo-path>`
+  - List GitHub origin repos (not scanner paths or local paths) in the `#### repos:` line
+- **Synthesize related events** — don't list every individual recap as a separate bullet. Group events that are part of the same initiative (e.g., 12 separate E2E spec recaps from GSD agents → one summary bullet like "Phase 12 E2E complete: 5 plans, 10+ specs, ~80 data-testids"). Look for common themes: same phase, same feature area, same PR chain. Summarize the group with counts and key deliverables.
 
 ## Example Output
 

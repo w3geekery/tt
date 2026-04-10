@@ -7,6 +7,7 @@
 export interface Company {
   id: string;
   name: string;
+  slug: string;
   initials?: string | null;
   color?: string | null;
   created_at: string;
@@ -17,6 +18,7 @@ export interface Project {
   id: string;
   company_id: string;
   name: string;
+  slug: string;
   color?: string | null;
   billable: boolean;
   daily_cap_hrs?: number | null;
@@ -35,6 +37,7 @@ export interface Task {
   company_id: string;
   project_id?: string | null;
   name: string;
+  slug: string;
   code?: string | null;
   url?: string | null;
   created_at: string;

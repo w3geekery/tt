@@ -33,6 +33,52 @@ const ptMonth = () => ptDate().slice(0, 7);
 getDb(config.db);
 loadExtensions(config.extensions);
 
+/** Resolve a company reference (ID or slug) to an ID. */
+function resolveCompany(db: ReturnType<typeof getDb>, ref: string): string | null {
+  if (/^[A-F0-9]{32}$/i.test(ref)) {
+    if (companiesDb.findById(db, ref)) return ref;
+  }
+  const co = companiesDb.findBySlug(db, ref);
+  return co?.id ?? null;
+}
+
+/** Resolve a project reference (ID or slug) to an ID. */
+function resolveProject(db: ReturnType<typeof getDb>, ref: string): string | null {
+  if (/^[A-F0-9]{32}$/i.test(ref)) {
+    if (projectsDb.findById(db, ref)) return ref;
+  }
+  const proj = projectsDb.findBySlug(db, ref);
+  return proj?.id ?? null;
+}
+
+/** Resolve a task reference (ID or slug) to an ID. */
+function resolveTask(db: ReturnType<typeof getDb>, ref: string): string | null {
+  if (/^[A-F0-9]{32}$/i.test(ref)) {
+    if (tasksDb.findById(db, ref)) return ref;
+  }
+  const task = tasksDb.findBySlug(db, ref);
+  return task?.id ?? null;
+}
+
+/** Enrich timers with joined company/project/task names and slugs. */
+function enrichTimers(timers: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  const db = getDb();
+  return timers.map(t => {
+    const company = t.company_id ? companiesDb.findById(db, t.company_id as string) : null;
+    const project = t.project_id ? projectsDb.findById(db, t.project_id as string) : null;
+    const task = t.task_id ? tasksDb.findById(db, t.task_id as string) : null;
+    return {
+      ...t,
+      company_name: company?.name ?? null,
+      company_slug: company?.slug ?? null,
+      project_name: project?.name ?? null,
+      project_slug: project?.slug ?? null,
+      task_name: task?.name ?? null,
+      task_slug: task?.slug ?? null,
+    };
+  });
+}
+
 const server = new McpServer({
   name: 'tt',
   version: '0.1.0',
@@ -41,9 +87,9 @@ const server = new McpServer({
 // --- Timer tools ---
 
 server.tool('start_timer', 'Start a new or existing timer. Auto-stops any running timer.', {
-  company_id: z.string().optional().describe('Company ID (required when creating new)'),
-  project_id: z.string().optional().describe('Project ID'),
-  task_id: z.string().optional().describe('Task ID'),
+  company_id: z.string().optional().describe('Company ID or slug (required when creating new)'),
+  project_id: z.string().optional().describe('Project ID or slug'),
+  task_id: z.string().optional().describe('Task ID or slug'),
   timer_id: z.string().optional().describe('Existing timer ID to start'),
   notes: z.string().optional().describe('Timer notes'),
 }, async ({ company_id, project_id, task_id, timer_id, notes }) => {
@@ -52,8 +98,11 @@ server.tool('start_timer', 'Start a new or existing timer. Auto-stops any runnin
   if (timer_id) {
     timer = timersDb.start(db, timer_id);
   } else {
-    if (!company_id) return { content: [{ type: 'text', text: 'Error: company_id is required when creating a new timer' }] };
-    timer = timersDb.create(db, { company_id, project_id, task_id, notes });
+    const coId = company_id ? resolveCompany(db, company_id) : null;
+    if (!coId) return { content: [{ type: 'text', text: 'Error: company_id is required when creating a new timer' }] };
+    const projId = project_id ? resolveProject(db, project_id) : undefined;
+    const tskId = task_id ? resolveTask(db, task_id) : undefined;
+    timer = timersDb.create(db, { company_id: coId, project_id: projId, task_id: tskId, notes });
     timer = timersDb.start(db, timer.id);
   }
   await runHook('onTimerStart', timer);
@@ -96,7 +145,7 @@ server.tool('get_running_timer', 'Get the currently running timer.', {}, async (
   const db = getDb();
   const timer = timersDb.findRunning(db);
   if (!timer) return { content: [{ type: 'text', text: 'No timer is currently running' }] };
-  return { content: [{ type: 'text', text: JSON.stringify(timer, null, 2) }] };
+  return { content: [{ type: 'text', text: JSON.stringify(enrichTimers([timer as any])[0], null, 2) }] };
 });
 
 server.tool('list_timers', 'List timers, optionally filtered by date.', {
@@ -104,7 +153,7 @@ server.tool('list_timers', 'List timers, optionally filtered by date.', {
 }, async ({ date }) => {
   const db = getDb();
   const list = date ? timersDb.findByDate(db, date) : timersDb.findAll(db);
-  return { content: [{ type: 'text', text: JSON.stringify(list, null, 2) }] };
+  return { content: [{ type: 'text', text: JSON.stringify(enrichTimers(list as any[]), null, 2) }] };
 });
 
 server.tool('get_timer_by_slug', 'Find a timer by its slug (e.g. 260326-1).', {
@@ -113,19 +162,23 @@ server.tool('get_timer_by_slug', 'Find a timer by its slug (e.g. 260326-1).', {
   const db = getDb();
   const timer = timersDb.findBySlug(db, slug);
   if (!timer) return { content: [{ type: 'text', text: `No timer found with slug ${slug}` }] };
-  return { content: [{ type: 'text', text: JSON.stringify(timer, null, 2) }] };
+  return { content: [{ type: 'text', text: JSON.stringify(enrichTimers([timer as any])[0], null, 2) }] };
 });
 
 server.tool('add_entry', 'Add a manual time entry.', {
-  company_id: z.string().describe('Company ID'),
-  project_id: z.string().optional().describe('Project ID'),
-  task_id: z.string().optional().describe('Task ID'),
+  company_id: z.string().describe('Company ID or slug'),
+  project_id: z.string().optional().describe('Project ID or slug'),
+  task_id: z.string().optional().describe('Task ID or slug'),
   started: z.string().describe('Start time (ISO 8601)'),
   ended: z.string().describe('End time (ISO 8601)'),
   notes: z.string().optional().describe('Notes'),
 }, async (input) => {
   const db = getDb();
-  const timer = timersDb.addEntry(db, input);
+  const coId = resolveCompany(db, input.company_id);
+  if (!coId) return { content: [{ type: 'text', text: `Error: company not found: ${input.company_id}` }] };
+  const projId = input.project_id ? resolveProject(db, input.project_id) : undefined;
+  const tskId = input.task_id ? resolveTask(db, input.task_id) : undefined;
+  const timer = timersDb.addEntry(db, { ...input, company_id: coId, project_id: projId, task_id: tskId });
   const hrs = (timer.duration_ms! / 3600000).toFixed(2);
   return { content: [{ type: 'text', text: `Added entry ${timer.slug} — ${hrs}h` }] };
 });
@@ -133,13 +186,16 @@ server.tool('add_entry', 'Add a manual time entry.', {
 server.tool('update_timer', 'Update timer fields (notes, project, task, times).', {
   timer_id: z.string().describe('Timer ID'),
   notes: z.string().optional().describe('Updated notes'),
-  project_id: z.string().optional().describe('Updated project ID'),
-  task_id: z.string().optional().describe('Updated task ID'),
+  project_id: z.string().optional().describe('Updated project ID or slug'),
+  task_id: z.string().optional().describe('Updated task ID or slug'),
   started: z.string().optional().describe('Updated start time (ISO 8601)'),
   ended: z.string().optional().describe('Updated end time (ISO 8601)'),
-}, async ({ timer_id, ...updates }) => {
+}, async ({ timer_id, project_id, task_id, ...rest }) => {
   const db = getDb();
-  const timer = timersDb.update(db, timer_id, updates);
+  const resolved: Record<string, unknown> = { ...rest };
+  if (project_id !== undefined) resolved.project_id = project_id ? resolveProject(db, project_id) : null;
+  if (task_id !== undefined) resolved.task_id = task_id ? resolveTask(db, task_id) : null;
+  const timer = timersDb.update(db, timer_id, resolved);
   if (!timer) return { content: [{ type: 'text', text: 'Timer not found' }] };
   return { content: [{ type: 'text', text: `Updated timer ${timer.slug}` }] };
 });
@@ -195,14 +251,18 @@ server.tool('list_favorites', 'List all favorite timer templates.', {}, async ()
 });
 
 server.tool('create_favorite', 'Save a company/project/task combo as a favorite template.', {
-  company_id: z.string().describe('Company ID'),
-  project_id: z.string().optional().describe('Project ID'),
-  task_id: z.string().optional().describe('Task ID'),
+  company_id: z.string().describe('Company ID or slug'),
+  project_id: z.string().optional().describe('Project ID or slug'),
+  task_id: z.string().optional().describe('Task ID or slug'),
 }, async ({ company_id, project_id, task_id }) => {
   const db = getDb();
-  const existing = favoritesDb.findByTemplate(db, company_id, project_id, task_id);
+  const coId = resolveCompany(db, company_id);
+  if (!coId) return { content: [{ type: 'text', text: `Company not found: ${company_id}` }] };
+  const projId = project_id ? resolveProject(db, project_id) : undefined;
+  const tskId = task_id ? resolveTask(db, task_id) : undefined;
+  const existing = favoritesDb.findByTemplate(db, coId, projId, tskId);
   if (existing) return { content: [{ type: 'text', text: 'Already a favorite' }] };
-  const fav = favoritesDb.create(db, { company_id, project_id, task_id });
+  const fav = favoritesDb.create(db, { company_id: coId, project_id: projId, task_id: tskId });
   return { content: [{ type: 'text', text: `Created favorite ${fav.id}` }] };
 });
 
@@ -367,47 +427,55 @@ server.tool('create_company', 'Create a new company.', {
 });
 
 server.tool('list_projects', 'List all projects, optionally by company.', {
-  company_id: z.string().optional().describe('Filter by company ID'),
+  company_id: z.string().optional().describe('Filter by company ID or slug'),
 }, async ({ company_id }) => {
   const db = getDb();
-  const list = company_id ? projectsDb.findByCompany(db, company_id) : projectsDb.findAll(db);
+  const coId = company_id ? resolveCompany(db, company_id) : null;
+  const list = coId ? projectsDb.findByCompany(db, coId) : projectsDb.findAll(db);
   return { content: [{ type: 'text', text: JSON.stringify(list, null, 2) }] };
 });
 
 server.tool('create_project', 'Create a new project.', {
-  company_id: z.string().describe('Company ID'),
+  company_id: z.string().describe('Company ID or slug'),
   name: z.string().describe('Project name'),
   billable: z.boolean().optional().describe('Is billable (default true)'),
   daily_cap_hrs: z.number().optional().describe('Daily hour cap'),
   weekly_cap_hrs: z.number().optional().describe('Weekly hour cap'),
 }, async (input) => {
   const db = getDb();
-  const proj = projectsDb.create(db, input);
-  return { content: [{ type: 'text', text: `Created project "${proj.name}" (${proj.id})` }] };
+  const coId = resolveCompany(db, input.company_id);
+  if (!coId) return { content: [{ type: 'text', text: `Company not found: ${input.company_id}` }] };
+  const proj = projectsDb.create(db, { ...input, company_id: coId });
+  return { content: [{ type: 'text', text: `Created project "${proj.name}" (${proj.slug})` }] };
 });
 
 server.tool('list_tasks', 'List all tasks, optionally by company or project.', {
-  company_id: z.string().optional().describe('Filter by company ID'),
-  project_id: z.string().optional().describe('Filter by project ID'),
+  company_id: z.string().optional().describe('Filter by company ID or slug'),
+  project_id: z.string().optional().describe('Filter by project ID or slug'),
 }, async ({ company_id, project_id }) => {
   const db = getDb();
   let list;
-  if (project_id) list = tasksDb.findByProject(db, project_id);
-  else if (company_id) list = tasksDb.findByCompany(db, company_id);
+  const projId = project_id ? resolveProject(db, project_id) : null;
+  const coId = company_id ? resolveCompany(db, company_id) : null;
+  if (projId) list = tasksDb.findByProject(db, projId);
+  else if (coId) list = tasksDb.findByCompany(db, coId);
   else list = tasksDb.findAll(db);
   return { content: [{ type: 'text', text: JSON.stringify(list, null, 2) }] };
 });
 
 server.tool('create_task', 'Create a new task.', {
-  company_id: z.string().describe('Company ID'),
-  project_id: z.string().optional().describe('Project ID'),
+  company_id: z.string().describe('Company ID or slug'),
+  project_id: z.string().optional().describe('Project ID or slug'),
   name: z.string().describe('Task name'),
   code: z.string().optional().describe('Task code (e.g. JIRA-123)'),
   url: z.string().optional().describe('Task URL'),
 }, async (input) => {
   const db = getDb();
-  const task = tasksDb.create(db, input);
-  return { content: [{ type: 'text', text: `Created task "${task.name}" (${task.id})` }] };
+  const coId = resolveCompany(db, input.company_id);
+  if (!coId) return { content: [{ type: 'text', text: `Company not found: ${input.company_id}` }] };
+  const projId = input.project_id ? resolveProject(db, input.project_id) : undefined;
+  const task = tasksDb.create(db, { ...input, company_id: coId, project_id: projId });
+  return { content: [{ type: 'text', text: `Created task "${task.name}" (${task.slug})` }] };
 });
 
 // --- Notification tools ---
@@ -448,9 +516,9 @@ server.tool('list_recurring_timers', 'List recurring timers.', {
 });
 
 server.tool('create_recurring_timer', 'Create a recurring timer.', {
-  company_id: z.string().describe('Company ID'),
-  project_id: z.string().optional().describe('Project ID'),
-  task_id: z.string().optional().describe('Task ID'),
+  company_id: z.string().describe('Company ID or slug'),
+  project_id: z.string().optional().describe('Project ID or slug'),
+  task_id: z.string().optional().describe('Task ID or slug'),
   pattern: z.enum(['daily', 'weekdays', 'weekly']).describe('Recurrence pattern: daily (every day), weekdays (Mon-Fri), weekly (specific day)'),
   weekday: z.number().optional().describe('Day of week (0=Sun, 6=Sat) for weekly'),
   start_time: z.string().optional().describe('Start time (HH:MM)'),
@@ -459,7 +527,11 @@ server.tool('create_recurring_timer', 'Create a recurring timer.', {
   notes: z.string().optional().describe('Notes'),
 }, async (input) => {
   const db = getDb();
-  const rec = recurringDb.create(db, input);
+  const coId = resolveCompany(db, input.company_id);
+  if (!coId) return { content: [{ type: 'text', text: `Company not found: ${input.company_id}` }] };
+  const projId = input.project_id ? resolveProject(db, input.project_id) : undefined;
+  const tskId = input.task_id ? resolveTask(db, input.task_id) : undefined;
+  const rec = recurringDb.create(db, { ...input, company_id: coId, project_id: projId, task_id: tskId });
   return { content: [{ type: 'text', text: `Created ${rec.pattern} recurring timer (${rec.id})` }] };
 });
 
@@ -494,7 +566,7 @@ server.tool('unskip_recurring_timer', 'Remove a skip for a recurring timer.', {
 // --- Invoice report ---
 
 server.tool('invoice_report', 'Generate invoice data for a company/project over a date range.', {
-  company_id: z.string().describe('Company ID'),
+  company_id: z.string().describe('Company ID or slug'),
   project_id: z.string().optional().describe('Project ID (all projects if omitted)'),
   start_date: z.string().describe('Start date (YYYY-MM-DD)'),
   end_date: z.string().describe('End date (YYYY-MM-DD)'),
@@ -538,7 +610,7 @@ server.tool('invoice_report', 'Generate invoice data for a company/project over 
 // --- Missing config CRUD tools ---
 
 server.tool('update_company', 'Update a company.', {
-  company_id: z.string().describe('Company ID'),
+  company_id: z.string().describe('Company ID or slug'),
   name: z.string().optional().describe('New name'),
   initials: z.string().optional().describe('New initials'),
   color: z.string().optional().describe('New hex color'),
@@ -550,7 +622,7 @@ server.tool('update_company', 'Update a company.', {
 });
 
 server.tool('delete_company', 'Delete a company.', {
-  company_id: z.string().describe('Company ID'),
+  company_id: z.string().describe('Company ID or slug'),
 }, async ({ company_id }) => {
   const db = getDb();
   const ok = companiesDb.remove(db, company_id);
@@ -558,7 +630,7 @@ server.tool('delete_company', 'Delete a company.', {
 });
 
 server.tool('update_project', 'Update a project.', {
-  project_id: z.string().describe('Project ID'),
+  project_id: z.string().describe('Project ID or slug'),
   name: z.string().optional().describe('New name'),
   color: z.string().optional().describe('New hex color'),
   billable: z.boolean().optional().describe('Is billable'),
@@ -574,7 +646,7 @@ server.tool('update_project', 'Update a project.', {
 });
 
 server.tool('delete_project', 'Delete a project.', {
-  project_id: z.string().describe('Project ID'),
+  project_id: z.string().describe('Project ID or slug'),
 }, async ({ project_id }) => {
   const db = getDb();
   const ok = projectsDb.remove(db, project_id);
@@ -582,7 +654,7 @@ server.tool('delete_project', 'Delete a project.', {
 });
 
 server.tool('update_task', 'Update a task.', {
-  task_id: z.string().describe('Task ID'),
+  task_id: z.string().describe('Task ID or slug'),
   name: z.string().optional().describe('New name'),
   code: z.string().optional().describe('New code'),
   url: z.string().optional().describe('New URL'),
@@ -594,7 +666,7 @@ server.tool('update_task', 'Update a task.', {
 });
 
 server.tool('delete_task', 'Delete a task.', {
-  task_id: z.string().describe('Task ID'),
+  task_id: z.string().describe('Task ID or slug'),
 }, async ({ task_id }) => {
   const db = getDb();
   const ok = tasksDb.remove(db, task_id);
@@ -614,9 +686,9 @@ server.tool('cancel_timer', 'Cancel a running/paused timer without recording dur
 });
 
 server.tool('schedule_timer', 'Schedule a timer to start at a future time.', {
-  company_id: z.string().describe('Company ID'),
-  project_id: z.string().optional().describe('Project ID'),
-  task_id: z.string().optional().describe('Task ID'),
+  company_id: z.string().describe('Company ID or slug'),
+  project_id: z.string().optional().describe('Project ID or slug'),
+  task_id: z.string().optional().describe('Task ID or slug'),
   start_at: z.string().describe('Scheduled start time (ISO 8601)'),
   stop_at: z.string().optional().describe('Scheduled stop time (ISO 8601)'),
   notes: z.string().optional().describe('Notes'),
@@ -728,6 +800,51 @@ server.tool('list_sessions', 'List cached SpecStory sessions by date, date range
     sessions = specstoryDb.findByDate(db, today);
   }
   return { content: [{ type: 'text' as const, text: JSON.stringify(sessions, null, 2) }] };
+});
+
+server.tool('list_session_events', 'List cached SpecStory events (timestamped messages, commits, recaps) by date or range. Use for backfill — events are date-scoped, not session-scoped.', {
+  date: z.string().optional().describe('Single date (YYYY-MM-DD)'),
+  date_from: z.string().optional().describe('Range start (YYYY-MM-DD)'),
+  date_to: z.string().optional().describe('Range end (YYYY-MM-DD)'),
+}, async ({ date, date_from, date_to }) => {
+  const db = getDb(config.db);
+  let events;
+  if (date) {
+    events = specstoryDb.findEventsByDate(db, date);
+  } else if (date_from && date_to) {
+    events = specstoryDb.findEventsByDateRange(db, date_from, date_to);
+  } else {
+    events = specstoryDb.findEventsByDate(db, ptDate());
+  }
+  if (events.length === 0) return { content: [{ type: 'text' as const, text: 'No events found for this date' }] };
+  return { content: [{ type: 'text' as const, text: JSON.stringify(events, null, 2) }] };
+});
+
+server.tool('daily_digest', 'Get a compact, backfill-optimized daily summary. Returns timer-aligned slots with recaps, PRs, and commit summaries (~2-3KB regardless of activity).', {
+  date: z.string().optional().describe('Date (YYYY-MM-DD, defaults to today)'),
+}, async ({ date }) => {
+  const db = getDb(config.db);
+  const dateStr = date ?? ptDate();
+
+  // Get enriched timers for slot boundaries
+  const rawTimers = timersDb.findByDate(db, dateStr) as unknown as Array<Record<string, unknown>>;
+  const enriched = enrichTimers(rawTimers);
+  const timerSlots = enriched
+    .filter(t => t.started && t.ended && (t.started as string) !== (t.ended as string))
+    .map(t => ({
+      slug: (t.slug as string) ?? '',
+      started: t.started as string,
+      ended: t.ended as string,
+      company_name: (t.company_name as string) ?? '',
+      project_name: (t.project_name as string) ?? '',
+      task_name: (t.task_name as string) ?? '',
+    }));
+
+  // Get high-signal events (recaps, PRs, commits with truncated content)
+  const events = specstoryDb.findDigestEventsByDate(db, dateStr);
+
+  const digest = specstoryDb.buildDailyDigest(dateStr, timerSlots, events);
+  return { content: [{ type: 'text' as const, text: JSON.stringify(digest, null, 2) }] };
 });
 
 server.tool('scan_sessions', 'Run the SpecStory scanner for a date/range and cache results to SQLite.', {

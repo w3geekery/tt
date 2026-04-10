@@ -4,11 +4,13 @@
  */
 
 import type Database from 'better-sqlite3';
+import { toSlug } from './entity-slug.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS companies (
   id TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
   name TEXT NOT NULL,
+  slug TEXT UNIQUE,
   initials TEXT,
   color TEXT,
   created_at TEXT DEFAULT (datetime('now')),
@@ -19,6 +21,7 @@ CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
   company_id TEXT NOT NULL REFERENCES companies(id),
   name TEXT NOT NULL,
+  slug TEXT UNIQUE,
   color TEXT,
   billable INTEGER DEFAULT 1,
   daily_cap_hrs REAL,
@@ -37,6 +40,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   company_id TEXT NOT NULL REFERENCES companies(id),
   project_id TEXT REFERENCES projects(id),
   name TEXT NOT NULL,
+  slug TEXT UNIQUE,
   code TEXT,
   url TEXT,
   created_at TEXT DEFAULT (datetime('now')),
@@ -106,6 +110,21 @@ CREATE TABLE IF NOT EXISTS specstory_sessions (
   cached_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS specstory_events (
+  id TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+  session_path TEXT NOT NULL REFERENCES specstory_sessions(path) ON DELETE CASCADE,
+  timestamp TEXT NOT NULL,
+  date_pt TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('user', 'agent')),
+  content TEXT,
+  event_type TEXT NOT NULL CHECK (event_type IN ('message', 'commit', 'tool_call', 'session_recap', 'pr')),
+  metadata TEXT DEFAULT '{}',
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_specstory_events_date ON specstory_events(date_pt);
+CREATE INDEX IF NOT EXISTS idx_specstory_events_session ON specstory_events(session_path);
+
 CREATE TABLE IF NOT EXISTS notifications (
   id TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
   type TEXT NOT NULL,
@@ -154,6 +173,29 @@ export function applySchema(db: Database.Database): void {
   const segCols = db.pragma('table_info(timer_segments)') as Array<{ name: string }>;
   if (segCols.some(c => c.name === 'duration_ms')) {
     db.exec('ALTER TABLE timer_segments DROP COLUMN duration_ms');
+  }
+
+  // Migration: add slug columns to companies, projects, tasks if missing
+  for (const table of ['companies', 'projects', 'tasks']) {
+    const cols = db.pragma(`table_info(${table})`) as Array<{ name: string }>;
+    if (!cols.some(c => c.name === 'slug')) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN slug TEXT`);
+      // Backfill slugs from names
+      const rows = db.prepare(`SELECT id, name FROM ${table} WHERE slug IS NULL`).all() as Array<{ id: string; name: string }>;
+      const used = new Set<string>();
+      const stmt = db.prepare(`UPDATE ${table} SET slug = ? WHERE id = ?`);
+      for (const row of rows) {
+        let slug = toSlug(row.name);
+        if (!slug) slug = `entity-${row.id.slice(0, 8).toLowerCase()}`;
+        let candidate = slug;
+        let n = 2;
+        while (used.has(candidate)) { candidate = `${slug}-${n++}`; }
+        used.add(candidate);
+        stmt.run(candidate, row.id);
+      }
+      // Now add unique index
+      db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_${table}_slug ON ${table}(slug)`);
+    }
   }
 
   // One-time fix: sync single-segment timers so segment timestamps match timer timestamps.

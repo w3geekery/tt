@@ -8,6 +8,7 @@ export interface Company {
   id: string;
   user_id: string;
   name: string;
+  slug: string;
   color: string | null;
   initials: string | null;
   sort_order: number;
@@ -20,6 +21,7 @@ export interface Project {
   user_id: string;
   company_id: string;
   name: string;
+  slug: string;
   color: string | null;
   billable: boolean;
   daily_cap_hrs: number | null;
@@ -38,6 +40,7 @@ export interface Task {
   user_id: string;
   project_id: string;
   name: string;
+  slug: string;
   code: string | null;
   url: string | null;
   sort_order: number;

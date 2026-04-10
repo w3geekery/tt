@@ -1,17 +1,20 @@
 import type Database from 'better-sqlite3';
 import type { Task } from '../types.js';
 import { randomUUID } from 'node:crypto';
+import { generateEntitySlug } from './entity-slug.js';
 
 export interface CreateTaskInput {
   company_id: string;
   project_id?: string | null;
   name: string;
+  slug?: string | null;
   code?: string | null;
   url?: string | null;
 }
 
 export interface UpdateTaskInput {
   name?: string;
+  slug?: string | null;
   code?: string | null;
   url?: string | null;
   project_id?: string | null;
@@ -33,13 +36,18 @@ export function findById(db: Database.Database, id: string): Task | undefined {
   return db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Task | undefined;
 }
 
+export function findBySlug(db: Database.Database, slug: string): Task | undefined {
+  return db.prepare('SELECT * FROM tasks WHERE slug = ? COLLATE NOCASE').get(slug) as Task | undefined;
+}
+
 export function create(db: Database.Database, input: CreateTaskInput): Task {
   const id = randomUUID().replace(/-/g, '').toUpperCase();
   const now = new Date().toISOString();
+  const slug = input.slug || generateEntitySlug(db, 'tasks', input.name);
   db.prepare(
-    `INSERT INTO tasks (id, company_id, project_id, name, code, url, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, input.company_id, input.project_id ?? null, input.name, input.code ?? null, input.url ?? null, now, now);
+    `INSERT INTO tasks (id, company_id, project_id, name, slug, code, url, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, input.company_id, input.project_id ?? null, input.name, slug, input.code ?? null, input.url ?? null, now, now);
   return findById(db, id)!;
 }
 
@@ -48,6 +56,7 @@ export function update(db: Database.Database, id: string, input: UpdateTaskInput
   const values: unknown[] = [];
 
   if (input.name !== undefined) { fields.push('name = ?'); values.push(input.name); }
+  if (input.slug !== undefined) { fields.push('slug = ?'); values.push(input.slug); }
   if (input.code !== undefined) { fields.push('code = ?'); values.push(input.code); }
   if (input.url !== undefined) { fields.push('url = ?'); values.push(input.url); }
   if (input.project_id !== undefined) { fields.push('project_id = ?'); values.push(input.project_id); }

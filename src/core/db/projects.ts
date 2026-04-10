@@ -1,10 +1,12 @@
 import type Database from 'better-sqlite3';
 import type { Project } from '../types.js';
 import { randomUUID } from 'node:crypto';
+import { generateEntitySlug } from './entity-slug.js';
 
 export interface CreateProjectInput {
   company_id: string;
   name: string;
+  slug?: string | null;
   color?: string | null;
   billable?: boolean;
   daily_cap_hrs?: number | null;
@@ -18,6 +20,7 @@ export interface CreateProjectInput {
 
 export interface UpdateProjectInput {
   name?: string;
+  slug?: string | null;
   color?: string | null;
   billable?: boolean;
   daily_cap_hrs?: number | null;
@@ -45,18 +48,24 @@ export function findById(db: Database.Database, id: string): Project | undefined
   return row ? mapRow(row) : undefined;
 }
 
+export function findBySlug(db: Database.Database, slug: string): Project | undefined {
+  const row = db.prepare('SELECT * FROM projects WHERE slug = ? COLLATE NOCASE').get(slug);
+  return row ? mapRow(row) : undefined;
+}
+
 export function create(db: Database.Database, input: CreateProjectInput): Project {
   const id = randomUUID().replace(/-/g, '').toUpperCase();
   const now = new Date().toISOString();
   db.prepare(
-    `INSERT INTO projects (id, company_id, name, color, billable, daily_cap_hrs, weekly_cap_hrs,
+    `INSERT INTO projects (id, company_id, name, slug, color, billable, daily_cap_hrs, weekly_cap_hrs,
       overflow_company_id, overflow_project_id, overflow_task_id, notify_on_cap, sort_order,
       created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.company_id,
     input.name,
+    input.slug || generateEntitySlug(db, 'projects', input.name),
     input.color ?? null,
     input.billable !== false ? 1 : 0,
     input.daily_cap_hrs ?? null,
@@ -77,6 +86,7 @@ export function update(db: Database.Database, id: string, input: UpdateProjectIn
   const values: unknown[] = [];
 
   if (input.name !== undefined) { fields.push('name = ?'); values.push(input.name); }
+  if (input.slug !== undefined) { fields.push('slug = ?'); values.push(input.slug); }
   if (input.color !== undefined) { fields.push('color = ?'); values.push(input.color); }
   if (input.billable !== undefined) { fields.push('billable = ?'); values.push(input.billable ? 1 : 0); }
   if (input.daily_cap_hrs !== undefined) { fields.push('daily_cap_hrs = ?'); values.push(input.daily_cap_hrs); }
