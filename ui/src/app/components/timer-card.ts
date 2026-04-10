@@ -407,13 +407,17 @@ export class TimerCardComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // Running: duration_ms holds completed segment time; add current segment elapsed
-    const completedMs = Number(t.duration_ms ?? 0);
+    // Running: compute from segments directly. Do NOT use t.duration_ms here —
+    // the server's SQL includes the open segment's time via COALESCE(ended, now()),
+    // so adding client-side currentElapsed would double-count it.
     const segments = t.segments;
     if (segments && segments.length > 0) {
+      const completedMs = segments
+        .filter(s => s.ended)
+        .reduce((sum, s) => sum + (new Date(s.ended!).getTime() - new Date(s.started).getTime()), 0);
       const openSegment = segments.find(s => !s.ended);
-      const currentElapsed = openSegment ? Date.now() - new Date(openSegment.started).getTime() : 0;
-      this.liveDuration.set(pipe.transform(completedMs + currentElapsed));
+      const openElapsed = openSegment ? Date.now() - new Date(openSegment.started).getTime() : 0;
+      this.liveDuration.set(pipe.transform(completedMs + openElapsed));
     } else {
       // Fallback: no segments loaded, use started time
       this.liveDuration.set(pipe.transform(Date.now() - new Date(t.started!).getTime()));
