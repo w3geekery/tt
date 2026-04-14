@@ -1,5 +1,43 @@
 # Changelog
 
+All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
+
+### 0.1.1 (2026-04-14)
+
+
+### Features
+
+* add /ss slash command with SQLite cache ([fb790af](https://github.com/w3geekery/tt/commit/fb790af3d45f2038fc9a2c64036016596f316dd8))
+* add /tt slash command with autocap, backfill, transcript sub-commands ([b7ec63a](https://github.com/w3geekery/tt/commit/b7ec63a6341914367b6194f2b333bf5d1b05b9b8))
+* add 11 missing MCP tools, update parity checklist ([fc114b2](https://github.com/w3geekery/tt/commit/fc114b290591ba964ad301738a7266564be88983))
+* add data migration, backup, and restore scripts ([4a3a9ec](https://github.com/w3geekery/tt/commit/4a3a9ec3f7c8b7fa3da9b3eb61957320128a275e))
+* add specstory_sessions table for SQLite-backed session cache ([a39b44a](https://github.com/w3geekery/tt/commit/a39b44a0ad18eebe151726ff5911d884e29da751))
+* collapsible timer cards, autocap fixes, launchd dev servers ([1453055](https://github.com/w3geekery/tt/commit/145305585241cd0af3f47544190488f304aa9743))
+* complete parity hitlist — 27 items from old timetracker-ui ([1a141c6](https://github.com/w3geekery/tt/commit/1a141c6f7abc9b5835f12be478c9ebee8a4a9129))
+* entity slugs, daily_digest MCP tool, backfill optimization ([b948de3](https://github.com/w3geekery/tt/commit/b948de3584759a4807f7b90a93551f5f812c3645))
+* favorite templates, segment rounding fixes, notification dedup ([5a45dec](https://github.com/w3geekery/tt/commit/5a45dec5e599aa0cfb26ed714a6936fafe24682f))
+* implement Angular UI with Material Design ([50ad375](https://github.com/w3geekery/tt/commit/50ad37559dfefc418a9835b39312fd63feb2709b))
+* implement cron engine, notifications, and state sync ([3a75d0e](https://github.com/w3geekery/tt/commit/3a75d0e0afeb9225e3ad124f82c656de1dd0f35a))
+* implement database layer with all CRUD modules ([f37a2aa](https://github.com/w3geekery/tt/commit/f37a2aa03a682f2e36d51a0ed9ed3e8d02735a65))
+* implement Express API with all routes and SSE broadcast ([a7732f3](https://github.com/w3geekery/tt/commit/a7732f38ff0c60c5837a01eb5397ec9bc9fc5145))
+* implement invoice aggregation with 15-min rounding and HTML template ([a84d765](https://github.com/w3geekery/tt/commit/a84d76584d1a63618bd34196ba508783add72990))
+* implement MCP server with all tools (direct DB, no HTTP) ([db0f513](https://github.com/w3geekery/tt/commit/db0f51349e5a5407e4deaa0322e1f1291d60ed5b))
+* Pacific Time fixes, specstory SQLite migration, dev server management ([0f8c9da](https://github.com/w3geekery/tt/commit/0f8c9da8f2cb590919b5a31bbf8177c36cd65f73))
+* replace Angular UI with old app source, rewrite Express API to match ([ba291a3](https://github.com/w3geekery/tt/commit/ba291a360931d7d428859608590b8ce3c6018d28))
+* scaffold tt — local-first time tracker ([4e74c21](https://github.com/w3geekery/tt/commit/4e74c21b903701f4f5105191556704ec0f09a899))
+* timestamp-aware /tt:backfill + dev-server half-state recovery ([4e40133](https://github.com/w3geekery/tt/commit/4e40133f40177977369d1125e76528f2bedacae5)), closes [#1](https://github.com/w3geekery/tt/issues/1) [#2](https://github.com/w3geekery/tt/issues/2) [#3](https://github.com/w3geekery/tt/issues/3) [#4](https://github.com/w3geekery/tt/issues/4)
+* **ui:** add snackbars, theme toggle, inline editing, segments, filters ([04741a9](https://github.com/w3geekery/tt/commit/04741a954bf85a8b38cbbea36e58b623e9ea84a7))
+* **ui:** config drill-down, breadcrumbs, color picker ([eccdc18](https://github.com/w3geekery/tt/commit/eccdc18d8071848c8d90217294442aa778e665b5))
+* **ui:** skeleton loaders, new timer dialog, scheduled timers ([d164be5](https://github.com/w3geekery/tt/commit/d164be5c71c94599a26672b4eac7f9165372790d))
+* **ui:** weekly column layout and monthly calendar grid ([df7b3ae](https://github.com/w3geekery/tt/commit/df7b3aea940123e65f58c58df9f8627ab2b49aa4))
+
+
+### Bug Fixes
+
+* timer card double-counts open segment elapsed time ([c523542](https://github.com/w3geekery/tt/commit/c523542a950be37bcf669a231f51573f23e4db10))
+
+# Changelog
+
 All notable changes to `tt` are documented here. Newest first.
 
 ## 2026-04-14
