@@ -12,6 +12,7 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatMenuModule } from '@angular/material/menu';
 import { DurationPipe } from '../pipes/duration.pipe';
 import { StopTimerMenuComponent } from './stop-timer-menu';
+import { TimerCardCollapsedComponent } from './timer-card-collapsed';
 import { MarkdownNoteEditorComponent } from './markdown-note-editor.component';
 import { SegmentListComponent } from './segment-list.component';
 import { Timer, Project, Task, ExternalTaskLink } from '../models';
@@ -32,10 +33,25 @@ import { ApiService } from '../services/api.service';
     MatMenuModule,
     DurationPipe,
     StopTimerMenuComponent,
+    TimerCardCollapsedComponent,
     MarkdownNoteEditorComponent,
     SegmentListComponent,
   ],
   template: `
+    @if (isCollapsed() && !compact()) {
+      <app-timer-card-collapsed
+        [timer]="timer()"
+        [liveDuration]="liveDuration()"
+        (onExpand)="toggleCollapse()"
+        (onStop)="onStop.emit($event)"
+        (onPause)="onPause.emit($event)"
+        (onResume)="onResume.emit($event)"
+        (onScheduleStop)="onScheduleStop.emit($event)"
+        (onDelete)="onDelete.emit($event)"
+        (onToggleNotify)="toggleNotifyOnSwitch()"
+        (onStartEdit)="startEdit(); toggleCollapse()"
+      />
+    } @else {
     <mat-card [class.running]="isRunning()" [class.paused]="isPaused()" [class.scheduled]="isScheduled()" [class.cancelled]="isCancelled()" [class.compact]="compact()" [class.expanded]="expandable() && !compact()" (click)="handleCardClick($event)">
       <div class="card-top-row">
         <div class="timer-chips">
@@ -186,6 +202,16 @@ import { ApiService } from '../services/api.service';
           }
         }
       </mat-card-content>
+      @if (!compact() && !isScheduled()) {
+        <button
+          mat-icon-button
+          class="collapse-btn"
+          (click)="toggleCollapse(); $event.stopPropagation()"
+          title="Collapse"
+        >
+          <mat-icon>expand_less</mat-icon>
+        </button>
+      }
       @if (!compact()) {
       <mat-card-actions (click)="stopIfExpanded($event)">
         @if (editing()) {
@@ -249,6 +275,7 @@ import { ApiService } from '../services/api.service';
       </mat-card-actions>
       }
     </mat-card>
+    }
   `,
   styles: [`
     :host { display: block; margin-bottom: 12px; }
@@ -318,11 +345,27 @@ import { ApiService } from '../services/api.service';
     mat-card.compact .timer-duration { display: none; }
     mat-card.compact .timer-times { font-size: 0.7rem; margin-bottom: 4px; }
     :host:has(mat-card.compact) { margin-bottom: 6px; }
+    .collapse-btn {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      --mdc-icon-button-state-layer-size: 24px;
+      --mdc-icon-button-icon-size: 16px;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      opacity: 0.5;
+      transition: opacity 0.15s ease;
+    }
+    .collapse-btn:hover { opacity: 1; }
+    .collapse-btn mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    mat-card { position: relative; }
   `],
 })
 export class TimerCardComponent implements OnInit, OnDestroy {
   compact = input(false);
   expandable = input(false);
+  initiallyCollapsed = input(false);
   timer = input.required<Timer>();
   onStop = output<string>();
   onPause = output<string>();
@@ -334,7 +377,10 @@ export class TimerCardComponent implements OnInit, OnDestroy {
   onMakeRecurring = output<{ company_id: string; project_id: string | null; task_id: string | null; start_time: string }>();
   onToggleExpand = output<void>();
   onToggleFavorite = output<{ company_id: string; project_id: string | null; task_id: string | null }>();
+  onCollapseToggle = output<{ timerId: string; isCollapsed: boolean }>();
   isFavorite = input(false);
+
+  isCollapsed = signal(false);
 
   slugCopied = signal(false);
   externalTaskCopied = signal(false);
@@ -384,12 +430,21 @@ export class TimerCardComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit() {
+    // Hydrate initial collapse state from parent (sessionStorage round-trip).
+    this.isCollapsed.set(this.initiallyCollapsed());
+
     if ((this.isRunning() || this.isPaused()) && isPlatformBrowser(this.platformId)) {
       this.updateLiveDuration();
       if (this.isRunning()) {
         this.intervalId = setInterval(() => this.updateLiveDuration(), 1000);
       }
     }
+  }
+
+  toggleCollapse(): void {
+    const next = !this.isCollapsed();
+    this.isCollapsed.set(next);
+    this.onCollapseToggle.emit({ timerId: this.timer().id, isCollapsed: next });
   }
 
   ngOnDestroy() {

@@ -3,14 +3,16 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.w3geekery.tt-dev</string>
+    <string>com.w3geekery.tt-web-servers</string>
     <key>Program</key>
-    <string>/Users/cstacer/Projects/w3geekery/tt/scripts/dev-server.sh</string>
+    <string>/Users/cstacer/Projects/w3geekery/tt/scripts/tt-web-servers</string>
     <key>ProgramArguments</key>
     <array>
-        <string>tt-dev-server</string>
+        <string>tt-web-servers</string>
         <string>start</string>
     </array>
+    <key>RunAtLoad</key>
+    <true/>
     <key>StartCalendarInterval</key>
     <array>
         <dict>

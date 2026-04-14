@@ -66,6 +66,7 @@ export class DailyComponent implements OnInit, OnDestroy {
   selectedDate = signal<Date>(new Date());
   selectedCompanies = signal<Set<string>>(new Set());
   selectedFavorite = signal<FavoriteTemplate | null>(null);
+  collapsedStates = signal<Map<string, boolean>>(new Map());
 
   // Navigation context
   fromMonthly = signal(false);
@@ -199,7 +200,59 @@ export class DailyComponent implements OnInit, OnDestroy {
   }
 
   loadTimers() {
-    this.timerService.getByDate(this.dateString()).subscribe((t) => this.timers.set(t));
+    this.timerService.getByDate(this.dateString()).subscribe((t) => {
+      this.timers.set(t);
+      this.hydrateCollapsedStates();
+    });
+  }
+
+  /**
+   * sessionStorage key for persisting per-timer collapse state on the daily page.
+   * Scope is the tab/session — reloads preserve, closing the tab clears.
+   */
+  static readonly COLLAPSED_STORAGE_KEY = 'tt.daily.collapsedTimers';
+
+  /** Read the set of collapsed timer IDs from sessionStorage. Tolerates missing/malformed data. */
+  getCollapsedTimers(): Set<string> {
+    if (!isPlatformBrowser(this.platformId)) return new Set();
+    try {
+      const raw = sessionStorage.getItem(DailyComponent.COLLAPSED_STORAGE_KEY);
+      if (!raw) return new Set();
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? new Set(parsed.filter((x): x is string => typeof x === 'string')) : new Set();
+    } catch {
+      return new Set();
+    }
+  }
+
+  /** Write a single timer's collapse state. Silently no-ops if sessionStorage is unavailable or full. */
+  saveCollapsedState(timerId: string, isCollapsed: boolean): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    const current = this.getCollapsedTimers();
+    if (isCollapsed) current.add(timerId); else current.delete(timerId);
+    try {
+      sessionStorage.setItem(DailyComponent.COLLAPSED_STORAGE_KEY, JSON.stringify([...current]));
+    } catch {
+      // Overflow/quota — degrade silently per plan edge-case spec.
+    }
+  }
+
+  /** Called after loadTimers(): populate collapsedStates signal from sessionStorage. */
+  private hydrateCollapsedStates(): void {
+    const persisted = this.getCollapsedTimers();
+    const map = new Map<string, boolean>();
+    for (const t of this.timers()) {
+      map.set(t.id, persisted.has(t.id));
+    }
+    this.collapsedStates.set(map);
+  }
+
+  /** Handler for <app-timer-card>'s onCollapseToggle output. */
+  onTimerCollapsed(event: { timerId: string; isCollapsed: boolean }): void {
+    this.saveCollapsedState(event.timerId, event.isCollapsed);
+    const current = new Map(this.collapsedStates());
+    current.set(event.timerId, event.isCollapsed);
+    this.collapsedStates.set(current);
   }
 
   loadEntities() {

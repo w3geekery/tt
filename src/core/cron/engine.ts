@@ -247,18 +247,16 @@ async function checkCaps(db: Database.Database): Promise<void> {
   `).all(todayPT) as Array<Record<string, unknown>>;
 
   for (const row of rows) {
-    // Check if we already notified today
+    const project = projectsDb.findById(db, row.id as string);
+    if (!project) continue;
+
+    // Notification dedup: only send one cap_hit notification per project per day
     const alreadyNotified = db.prepare(
       `SELECT id FROM notifications WHERE type = 'cap_hit' AND timer_id IS NULL
        AND message LIKE ? AND substr(created_at, 1, 10) = ?`,
     ).get(`%${row.id}%`, todayPT);
 
-    if (alreadyNotified) continue;
-
-    const project = projectsDb.findById(db, row.id as string);
-    if (!project) continue;
-
-    if (row.notify_on_cap) {
+    if (row.notify_on_cap && !alreadyNotified) {
       sendNotification('Cap reached', `${row.name}: ${(row.daily_used as number).toFixed(1)}/${row.daily_cap_hrs}h`);
       const capHit = notificationsDb.create(db, {
         type: 'cap_hit',
@@ -267,27 +265,49 @@ async function checkCaps(db: Database.Database): Promise<void> {
         trigger_at: new Date().toISOString(),
       });
       notificationsDb.markFired(db, capHit.id);
+      await runHook('onCapHit', project, 'daily');
     }
 
-    await runHook('onCapHit', project, 'daily');
-
-    // Autocap: if the running timer is on this project and overflow is configured, switch
+    // Autocap is INDEPENDENT of notification dedup. Fires whenever:
+    //   (a) the project's cap is exceeded, AND
+    //   (b) a running timer exists on this project, AND
+    //   (c) overflow is configured.
+    // This matters if data was edited after an earlier cap_hit notification.
     if (project.overflow_company_id && project.overflow_project_id) {
       const running = timersDb.findRunning(db);
       if (running && running.project_id === project.id && running.started) {
-        // Calculate exact cap-hit time: how much of the cap was used by OTHER stopped timers today?
+        // Calculate exact cap-hit time accounting for pauses in the running timer.
+        // Step 1: how much cap budget was consumed by OTHER timers today?
         const otherMs = db.prepare(
           `SELECT COALESCE(SUM(
             CAST((julianday(COALESCE(ts.ended, datetime('now'))) - julianday(ts.started)) * 86400000 AS INTEGER)
           ), 0) as ms
           FROM timers t
           JOIN timer_segments ts ON ts.timer_id = t.id
-          WHERE substr(t.started, 1, 10) = ? AND t.project_id = ? AND t.id != ? AND t.state = 'stopped'`,
+          WHERE substr(t.started, 1, 10) = ? AND t.project_id = ? AND t.id != ?`,
         ).get(todayPT, project.id, running.id) as { ms: number };
         const capMs = (project.daily_cap_hrs ?? 0) * 3600000;
         const remainingMs = capMs - otherMs.ms;
-        // Cap-hit time = running timer's start + remaining cap budget
-        const capHitMs = new Date(running.started).getTime() + Math.max(remainingMs, 0);
+
+        // Step 2: walk the running timer's segments to find when remaining budget was exhausted.
+        // Closed segments consume budget first, then the open segment fills the rest.
+        const segments = db.prepare(
+          `SELECT started, ended FROM timer_segments WHERE timer_id = ? ORDER BY started ASC`,
+        ).all(running.id) as Array<{ started: string; ended: string | null }>;
+
+        let budgetLeft = Math.max(remainingMs, 0);
+        let capHitMs = Date.now(); // fallback to now
+        for (const seg of segments) {
+          const segStart = new Date(seg.started).getTime();
+          const segEnd = seg.ended ? new Date(seg.ended).getTime() : Date.now();
+          const segDuration = segEnd - segStart;
+          if (segDuration >= budgetLeft) {
+            // Cap was hit within this segment
+            capHitMs = segStart + budgetLeft;
+            break;
+          }
+          budgetLeft -= segDuration;
+        }
         // Round to nearest 15 minutes
         const fifteen = 15 * 60 * 1000;
         const roundedCapHit = new Date(Math.round(capHitMs / fifteen) * fifteen).toISOString();

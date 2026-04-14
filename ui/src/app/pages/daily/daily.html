@@ -112,6 +112,7 @@
     @for (timer of activeTimers(); track timer.id) {
       <app-timer-card
         [timer]="timer"
+        [initiallyCollapsed]="collapsedStates().get(timer.id) ?? false"
         (onStop)="stopTimer($event)"
         (onPause)="pauseTimer($event)"
         (onResume)="resumeTimer($event)"
@@ -121,6 +122,7 @@
         (onUpdate)="updateTimer($event)"
         [isFavorite]="isFavoriteTimer(timer)"
         (onToggleFavorite)="toggleFavorite($event)"
+        (onCollapseToggle)="onTimerCollapsed($event)"
       />
     }
 
@@ -137,6 +139,7 @@
     @for (timer of historyTimers(); track timer.id) {
       <app-timer-card
         [timer]="timer"
+        [initiallyCollapsed]="collapsedStates().get(timer.id) ?? false"
         (onStop)="stopTimer($event)"
         (onPause)="pauseTimer($event)"
         (onResume)="resumeTimer($event)"
@@ -146,6 +149,7 @@
         (onUpdate)="updateTimer($event)"
         [isFavorite]="isFavoriteTimer(timer)"
         (onToggleFavorite)="toggleFavorite($event)"
+        (onCollapseToggle)="onTimerCollapsed($event)"
       />
     }
 

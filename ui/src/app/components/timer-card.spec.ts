@@ -223,4 +223,45 @@ describe('TimerCardComponent (helpers)', () => {
       expect(output.task_id).toBeNull();
     });
   });
+
+  // --- getSingleLetter (collapsed-card chip label) ---
+  describe('getSingleLetter', () => {
+    // Re-declared here to test as a pure function. Keep in sync with
+    // TimerCardCollapsedComponent.getSingleLetter().
+    function getSingleLetter(name: string | null | undefined): string {
+      if (!name) return '?';
+      const trimmed = name.trim();
+      if (!trimmed) return '?';
+      return trimmed.charAt(0).toUpperCase();
+    }
+
+    it('returns the first character uppercase for a normal name', () => {
+      expect(getSingleLetter('ZeroBias')).toBe('Z');
+      expect(getSingleLetter('Standup Meeting')).toBe('S');
+    });
+
+    it('uppercases lowercase input', () => {
+      expect(getSingleLetter('general development')).toBe('G');
+    });
+
+    it('returns ? for null', () => {
+      expect(getSingleLetter(null)).toBe('?');
+    });
+
+    it('returns ? for undefined', () => {
+      expect(getSingleLetter(undefined)).toBe('?');
+    });
+
+    it('returns ? for empty string', () => {
+      expect(getSingleLetter('')).toBe('?');
+    });
+
+    it('returns ? for whitespace-only string', () => {
+      expect(getSingleLetter('   ')).toBe('?');
+    });
+
+    it('handles unicode first character', () => {
+      expect(getSingleLetter('Über')).toBe('Ü');
+    });
+  });
 });

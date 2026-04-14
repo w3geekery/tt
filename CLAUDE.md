@@ -131,10 +131,4 @@ npm run release:major    # force major
 
 ## Plans
 
-All plans live in `.claude/plans/local/` with `YYMMDD-kebab-name.md` naming.
-
-### Plan Index
-
-| Plan | Status | Description |
-|------|--------|-------------|
-| `260326-local-first-architecture.md` | ACTIVE | Architecture, migration path, phase breakdown |
+All plans live in `.claude/plans/local/` with `YYMMDD-kebab-name.md` naming. See [.claude/plans/local/INDEX.md](.claude/plans/local/INDEX.md) for the authoritative plan list with statuses.
