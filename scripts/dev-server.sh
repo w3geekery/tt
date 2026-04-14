@@ -31,15 +31,33 @@ kill_port() {
 }
 
 do_start() {
-  # Check if already running
-  if lsof -ti:$API_PORT &>/dev/null; then
-    echo "Server already running on port $API_PORT"
+  # Check current state of BOTH ports. A half-running state (API up, UI down,
+  # or vice versa) is NOT "already running" — it's a broken process tree that
+  # must be torn down and restarted, otherwise subsequent do_start calls are
+  # no-ops that leave the dead half dead. See changelog 2026-04-14.
+  local api_up=false ui_up=false
+  lsof -ti:$API_PORT &>/dev/null && api_up=true
+  lsof -ti:$UI_PORT &>/dev/null && ui_up=true
+
+  if $api_up && $ui_up; then
+    echo "Server already running (API:$API_PORT UI:$UI_PORT)"
     exit 0
   fi
 
-  # Clean up stale ports
+  if $api_up || $ui_up; then
+    echo "Partial state detected (API:$api_up UI:$ui_up) — cleaning up before restart"
+  fi
+
+  # Clean up stale ports AND any orphaned concurrently/tsx/npm parents that
+  # might otherwise survive a port kill and re-spawn a zombie child.
   kill_port $API_PORT
   kill_port $UI_PORT
+  # Kill orphaned tt-specific dev processes (match tt repo path to avoid
+  # touching unrelated node processes elsewhere on the machine).
+  pkill -f "$TT_DIR/node_modules/.bin/tsx" 2>/dev/null || true
+  pkill -f "$TT_DIR/node_modules/.bin/concurrently" 2>/dev/null || true
+  pkill -f "$TT_DIR.*npm run dev" 2>/dev/null || true
+  sleep 1
 
   # Start the dev server
   cd "$TT_DIR" || exit 1
@@ -49,15 +67,26 @@ do_start() {
   echo "$pid" > "$PID_FILE"
   echo "Started dev server (PID $pid), logging to $LOG_FILE"
 
-  # Wait for API to be ready
-  for i in $(seq 1 30); do
-    if curl -s "http://localhost:$API_PORT/api/auth/me" &>/dev/null; then
-      echo "API ready on port $API_PORT"
+  # Wait for BOTH API and UI to be ready — not just API.
+  local api_ready=false ui_ready=false
+  for i in $(seq 1 60); do
+    if ! $api_ready && curl -sf "http://localhost:$API_PORT/api/auth/me" &>/dev/null; then
+      api_ready=true
+      echo "API ready on port $API_PORT (after ${i}s)"
+    fi
+    if ! $ui_ready && lsof -ti:$UI_PORT &>/dev/null; then
+      ui_ready=true
+      echo "UI ready on port $UI_PORT (after ${i}s)"
+    fi
+    if $api_ready && $ui_ready; then
       return 0
     fi
     sleep 1
   done
-  echo "Warning: API not ready after 30s"
+
+  if ! $api_ready; then echo "Warning: API not ready after 60s"; fi
+  if ! $ui_ready; then echo "Warning: UI not ready after 60s"; fi
+  return 1
 }
 
 do_stop() {
