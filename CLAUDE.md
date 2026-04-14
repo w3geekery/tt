@@ -119,15 +119,24 @@ After building the MCP, **restart Claude Code** so the MCP stdio process reloads
 - Run: `npm test` or `npx vitest run`
 - Coverage target: 80%+
 
-## Versioning
+## Versioning & "ship it" workflow
 
-Conventional commits enforced by commitlint + husky.
+See [PUBLISHING.md](PUBLISHING.md) for the full release workflow — it's the authoritative doc for this project.
 
-```bash
-npm run release          # auto-detect bump
-npm run release:minor    # force minor
-npm run release:major    # force major
-```
+**TL;DR for Claude:** When Clark says "ship it":
+
+1. Commit with the correct Conventional Commit prefix (`feat:` / `fix:` / `chore:` / etc.), include `Session:` line + Co-Author trailer.
+2. `git push origin main`.
+3. **Decide whether to cut a release** based on commit type:
+   - `feat:` / `fix:` / `perf:` → run `npm run release` (or `release:minor` / `release:major` per PUBLISHING.md rules), then `git push --follow-tags origin main`.
+   - `chore:` / `docs:` / `test:` / `refactor:` / `ci:` → **stop after push**. No release cut.
+   - `BREAKING CHANGE:` → `npm run release:major`.
+
+**Key files:**
+- `CHANGELOG.md` — repo root, owned by `standard-version`. Do NOT hand-edit auto-generated `### X.Y.Z` sections.
+- `ui/public/CHANGELOG.md` — symlink → `../../CHANGELOG.md`. Angular serves it at `/CHANGELOG.md` for the in-app dialog. Never edit this path directly.
+
+**Pre-1.0 gotcha:** while on `0.x.y`, `feat:` defaults to a **patch** bump (SemVer's "0.x is unstable" rule). Use `npm run release:minor` explicitly when a feature deserves the bump.
 
 ## Plans
 
