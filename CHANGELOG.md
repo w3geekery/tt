@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.2](https://github.com/w3geekery/tt/compare/v0.1.1...v0.1.2) (2026-04-15)
+
+
+### Bug Fixes
+
+* **dev-server:** audit log, HTTP-based readiness, retry on failure ([db74426](https://github.com/w3geekery/tt/commit/db74426459ce21a66ca79aa89d14db0da634cd7d))
+
 ### 0.1.1 (2026-04-14)
 
 
