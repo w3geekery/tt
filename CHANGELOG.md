@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.3](https://github.com/w3geekery/tt/compare/v0.1.2...v0.1.3) (2026-04-15)
+
+
+### Bug Fixes
+
+* auto-bump ui/src/app/version.ts on npm run release ([e0d38bc](https://github.com/w3geekery/tt/commit/e0d38bcfa28120ce5d513e0e93115f9a3da314b6))
+
 ### [0.1.2](https://github.com/w3geekery/tt/compare/v0.1.1...v0.1.2) (2026-04-15)
 
 
