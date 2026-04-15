@@ -16,6 +16,9 @@ How `tt` versions are cut, tagged, and shipped.
 |------|------|
 | `CHANGELOG.md` (repo root) | **Source of truth.** `standard-version` writes here. Do NOT edit the auto-generated section headers (`### X.Y.Z (YYYY-MM-DD)`) — they're rebuilt on the next release. |
 | `ui/public/CHANGELOG.md` | Symlink → `../../CHANGELOG.md`. Angular serves `/CHANGELOG.md` at runtime from this path; the in-app changelog dialog loads it. **Never edit this file directly** — edit the root and the symlink will reflect the change. |
+| `.versionrc` | `standard-version` config. Declares which files get auto-bumped alongside `package.json`. |
+| `ui/src/app/version.ts` | Exports `APP_VERSION` for UI display (gear menu). **Auto-bumped** by `standard-version` via a custom updater in `scripts/version-updater.cjs`. Do not hand-edit. |
+| `scripts/version-updater.cjs` | Custom `standard-version` updater that pattern-matches the `APP_VERSION` literal in `version.ts`. |
 
 ### Pre-existing handwritten content
 
