@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.4](https://github.com/w3geekery/tt/compare/v0.1.3...v0.1.4) (2026-04-16)
+
+
+### Features
+
+* **tt:** greeting/farewell lifecycle + drop DarkWake cron ([9fa9c58](https://github.com/w3geekery/tt/commit/9fa9c582c658d2bffe59a8768716ce9ad6522268))
+
 ### [0.1.3](https://github.com/w3geekery/tt/compare/v0.1.2...v0.1.3) (2026-04-15)
 
 
