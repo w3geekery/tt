@@ -280,23 +280,46 @@ All times in Pacific Time (America/Los_Angeles):
 
 ### Dev Server Lifecycle
 
-The dev server runs locally — no compute cost concerns like Neon. Start/stop as needed:
+The dev server runs locally — no compute cost concerns like Neon. Always use the MCP tools, never raw `lsof`/`kill`/`curl`.
 
-#### `server start`
-```bash
-cd ~/Projects/w3geekery/tt && npm run dev
-```
-Starts Express API on port 4301 + Angular UI on port 4302.
+#### `server start` / **greeting aliases** — start Express API (4301) + Angular UI (4302)
 
-#### `server stop`
-```bash
-lsof -ti:4301 | xargs kill 2>/dev/null; lsof -ti:4302 | xargs kill 2>/dev/null
-```
+Call `mcp__tt__server_start`. Confirm with `mcp__tt__server_status` a few seconds later. Expected: `api_up: true, ui_up: true`.
+
+**Greeting aliases — all route to `server start`:**
+`hi`, `hey`, `hello`, `good morning`, `morning`, `yo`, `start`
+
+Examples that should trigger this path:
+- `/tt hey`
+- `/tt good morning`
+- `/tt yo`
+
+On greeting, optionally follow up with `get_running_timer` if there's a materialized-but-unstarted recurring timer that should have fired overnight while the server was down — Clark will want to know.
+
+#### `server stop` / **farewell aliases** — stop both processes cleanly
+
+Call `mcp__tt__server_stop`.
+
+**Farewell aliases — all route to `server stop`:**
+`goodbye`, `good night`, `gnight`, `night night`, `bye`, `later`, `laters`, `stop`
+
+Examples:
+- `/tt good night`
+- `/tt laters`
+- `/tt bye`
+
+On farewell, check `get_running_timer` first — if a timer is still running, surface it and ask before stopping the server ("Timer 260416-1 is running on ZeroBias/UI. Stop it first, or let it run overnight?"). If Clark says "don't care" / "leave it" / equivalent, stop the server anyway; the timer will still be in the DB when he restarts.
 
 #### `server status`
-```bash
-curl -sf http://localhost:4301/api/companies | head -1 && echo "API up" || echo "API down"
-```
+
+Call `mcp__tt__server_status`. Display a concise line:
+- `running (API:4301 UI:4302)` → both up
+- `partial` → one up, one down — prompt Clark: "API is up but UI is down. Run `/tt hey` to reconcile?"
+- `stopped` → both down — suggest `/tt hey`
+
+#### `server restart`
+
+Call `mcp__tt__server_restart`. Mostly for debugging; day-to-day use `stop` then `start` (or just `start` on a half-state, which now auto-recovers per `dev-server.sh`).
 
 ## Error Handling
 

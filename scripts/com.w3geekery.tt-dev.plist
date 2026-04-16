@@ -13,15 +13,13 @@
     </array>
     <key>RunAtLoad</key>
     <true/>
-    <key>StartCalendarInterval</key>
-    <array>
-        <dict>
-            <key>Hour</key>
-            <integer>6</integer>
-            <key>Minute</key>
-            <integer>0</integer>
-        </dict>
-    </array>
+    <!-- StartCalendarInterval removed 2026-04-16. The 6 AM trigger was
+         firing during macOS DarkWake cycles, which then immediately killed
+         the spawned processes on re-sleep. User-invoked start via
+         `/tt hey` / `/tt good morning` is the explicit lifecycle instead.
+         RunAtLoad covers the full-login case. -->
+    <key>ProcessType</key>
+    <string>Interactive</string>
     <key>StandardOutPath</key>
     <string>/tmp/tt-dev.log</string>
     <key>StandardErrorPath</key>
