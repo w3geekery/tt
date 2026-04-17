@@ -7,6 +7,7 @@ import * as projectsDb from '../../db/projects.js';
 import * as tasksDb from '../../db/tasks.js';
 import { broadcast } from '../sse.js';
 import { materializeRecurring } from '../../cron/engine.js';
+import { enrichTimer } from './timers.js';
 
 export const recurringRouter = Router();
 
@@ -91,24 +92,49 @@ recurringRouter.delete('/:id', (req: Request, res: Response) => {
   res.status(204).end();
 });
 
-// POST /api/timers/recurring/:id/skip — skip a recurring timer date
+// POST /api/timers/recurring/:id/skip — skip an occurrence (today or a specific date)
 recurringRouter.post('/:id/skip', (req: Request, res: Response) => {
+  const db = getDb();
   const { date } = req.body;
   if (!date) { res.status(400).json({ error: 'date is required' }); return; }
-  const rec = recurringDb.skipDate(getDb(), req.params.id as string, date);
-  if (!rec) { res.status(404).json({ error: 'Recurring timer not found' }); return; }
-  const enriched = enrichRecurring(getDb(), rec);
-  broadcast('timer-updated', { type: 'timer-updated', data: enriched });
-  res.json(enriched);
+  const result = recurringDb.skipOccurrence(db, req.params.id as string, date);
+  if (!result) { res.status(404).json({ error: 'Recurring timer not found' }); return; }
+
+  const enrichedRecurring = enrichRecurring(db, result.recurring);
+  broadcast('timer-updated', { type: 'timer-updated', data: enrichedRecurring });
+
+  let enrichedSkipped: any = null;
+  if (result.skippedTimer) {
+    enrichedSkipped = enrichTimer(db, result.skippedTimer);
+    broadcast('timer-updated', { type: 'timer-updated', data: enrichedSkipped });
+  }
+  let enrichedReplacement: any = null;
+  if (result.replacementTimer) {
+    enrichedReplacement = enrichTimer(db, result.replacementTimer);
+    broadcast('timer-updated', { type: 'timer-updated', data: enrichedReplacement });
+    broadcast('timer:started', enrichedReplacement);
+  }
+
+  res.json({ recurring: enrichedRecurring, skippedTimer: enrichedSkipped, replacementTimer: enrichedReplacement });
 });
 
 // POST /api/timers/recurring/:id/unskip — unskip a recurring timer date
 recurringRouter.post('/:id/unskip', (req: Request, res: Response) => {
+  const db = getDb();
   const { date } = req.body;
   if (!date) { res.status(400).json({ error: 'date is required' }); return; }
-  const rec = recurringDb.unskipDate(getDb(), req.params.id as string, date);
+  const rec = recurringDb.unskipDate(db, req.params.id as string, date);
   if (!rec) { res.status(404).json({ error: 'Recurring timer not found' }); return; }
-  const enriched = enrichRecurring(getDb(), rec);
+  const enriched = enrichRecurring(db, rec);
   broadcast('timer-updated', { type: 'timer-updated', data: enriched });
+
+  // Re-broadcast any materialized timer for that date so UI clears is_skipped flag
+  const row = db.prepare(
+    `SELECT id FROM timers WHERE date(created_at, '-7 hours') = date(?) AND recurring_id = ?`,
+  ).get(date, req.params.id as string) as { id: string } | undefined;
+  if (row) {
+    const timer = db.prepare('SELECT * FROM timers WHERE id = ?').get(row.id);
+    if (timer) broadcast('timer-updated', { type: 'timer-updated', data: enrichTimer(db, timer) });
+  }
   res.json(enriched);
 });

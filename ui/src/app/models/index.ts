@@ -90,6 +90,7 @@ export interface Timer {
   task_url?: string | null;
   stop_at: string | null;
   notify_on_switch?: boolean;
+  is_skipped?: boolean;
   segments?: TimerSegment[];
   created_at: string;
   updated_at: string;
@@ -177,6 +178,7 @@ export interface RecurringTimer {
   end_date: string | null;
   active: boolean;
   notes: string | null;
+  skipped_dates?: string[];
   company_name?: string;
   company_color?: string | null;
   project_name?: string | null;

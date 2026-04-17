@@ -62,6 +62,8 @@ export interface Timer {
   notify_on_switch: boolean;
   external_task?: Record<string, unknown> | null;
   recurring_id?: string | null;
+  /** True when the timer's date is in the parent recurring's skipped_dates (computed at API layer). */
+  is_skipped?: boolean;
   created_at: string;
   updated_at: string;
 }

@@ -12,13 +12,19 @@ import { broadcast } from '../sse.js';
 export const timersRouter = Router();
 
 // Helper to enrich timer with joined data
-function enrichTimer(db: any, timer: any) {
+export function enrichTimer(db: any, timer: any) {
   const company = timer.company_id ? companiesDb.findById(db, timer.company_id) : null;
   const project = timer.project_id ? projectsDb.findById(db, timer.project_id) : null;
   const task = timer.task_id ? tasksDb.findById(db, timer.task_id) : null;
   const segments = timersDb.getSegments(db, timer.id);
 
   const recurring = timer.recurring_id ? recurringDb.findById(db, timer.recurring_id) : null;
+  let is_skipped = false;
+  if (recurring && recurring.skipped_dates?.length) {
+    const ref = timer.started ?? timer.created_at;
+    const ptDate = new Date(ref).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+    is_skipped = recurring.skipped_dates.includes(ptDate);
+  }
 
   // Compute duration from segment timestamps — never stored, always derived
   const enrichedSegments = segments.map((seg: any) => ({
@@ -41,6 +47,7 @@ function enrichTimer(db: any, timer: any) {
     task_code: task?.code ?? null,
     task_url: task?.url ?? null,
     recurring_start_time: recurring?.start_time ?? null,
+    is_skipped,
     segments: enrichedSegments,
   };
 }

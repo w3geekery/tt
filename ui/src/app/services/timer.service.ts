@@ -91,6 +91,6 @@ export class TimerService {
   }
 
   removeSkip(recurringId: string, date: string) {
-    return this.http.delete(`/api/timers/recurring/${recurringId}/skip`, { body: { date } });
+    return this.http.post(`/api/timers/recurring/${recurringId}/unskip`, { date });
   }
 }

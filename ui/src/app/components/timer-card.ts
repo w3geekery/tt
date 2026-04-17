@@ -17,6 +17,7 @@ import { MarkdownNoteEditorComponent } from './markdown-note-editor.component';
 import { SegmentListComponent } from './segment-list.component';
 import { Timer, Project, Task, ExternalTaskLink } from '../models';
 import { ApiService } from '../services/api.service';
+import { TimerService } from '../services/timer.service';
 
 @Component({
   selector: 'app-timer-card',
@@ -52,11 +53,17 @@ import { ApiService } from '../services/api.service';
         (onStartEdit)="startEdit(); toggleCollapse()"
       />
     } @else {
-    <mat-card [class.running]="isRunning()" [class.paused]="isPaused()" [class.scheduled]="isScheduled()" [class.cancelled]="isCancelled()" [class.compact]="compact()" [class.expanded]="expandable() && !compact()" (click)="handleCardClick($event)">
+    <mat-card [class.running]="isRunning()" [class.paused]="isPaused()" [class.scheduled]="isScheduled()" [class.cancelled]="isCancelled()" [class.skipped]="isSkipped()" [class.compact]="compact()" [class.expanded]="expandable() && !compact()" (click)="handleCardClick($event)">
       <div class="card-top-row">
         <div class="timer-chips">
           @if (timer().recurring_id) {
             <mat-icon class="recurring-badge" title="Recurring">repeat</mat-icon>
+          }
+          @if (isSkipped()) {
+            <span class="skipped-chip" title="This recurring occurrence was skipped">
+              <mat-icon>event_busy</mat-icon>
+              Skipped
+            </span>
           }
           @if (timer().company_name) {
             <mat-chip-set>
@@ -265,6 +272,16 @@ import { ApiService } from '../services/api.service';
                     <mat-icon class="notify-check">check</mat-icon>
                   }
                 </button>
+                @if (timer().recurring_id && !isSkipped()) {
+                  <button mat-menu-item (click)="skipToday()">
+                    <mat-icon>event_busy</mat-icon> Skip occurrence
+                  </button>
+                }
+                @if (timer().recurring_id && isSkipped()) {
+                  <button mat-menu-item (click)="unskipToday()">
+                    <mat-icon>event_available</mat-icon> Unskip occurrence
+                  </button>
+                }
                 <button mat-menu-item (click)="onDelete.emit(timer().id)" class="delete-menu-item">
                   <mat-icon color="warn">delete</mat-icon> Delete
                 </button>
@@ -284,6 +301,9 @@ import { ApiService } from '../services/api.service';
     mat-card.paused { border-left: 4px solid #ff9800; }
     mat-card.scheduled { border-left: 4px solid #ff9800; opacity: 0.85; }
     mat-card.cancelled { border-left: 4px solid #666; opacity: 0.5; }
+    mat-card.skipped { border-left: 4px solid #9c27b0; opacity: 0.55; }
+    .skipped-chip { display: inline-flex; align-items: center; gap: 2px; background: #9c27b0; color: #fff; font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; line-height: 1; }
+    .skipped-chip mat-icon { font-size: 14px; width: 14px; height: 14px; }
     .scheduled-label { display: flex; align-items: center; gap: 4px; color: #ff9800; font-size: 0.9rem; }
     .scheduled-icon { font-size: 18px; width: 18px; height: 18px; }
     mat-card.expanded { outline: 2px solid var(--mat-sys-primary); box-shadow: var(--mat-sys-level3); }
@@ -403,6 +423,7 @@ export class TimerCardComponent implements OnInit, OnDestroy {
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private platformId = inject(PLATFORM_ID);
   private api = inject(ApiService);
+  private timerService = inject(TimerService);
 
   isRunning() {
     return this.timer().state === 'running';
@@ -419,6 +440,28 @@ export class TimerCardComponent implements OnInit, OnDestroy {
   isCancelled() {
     return this.timer().state === 'stopped' && this.timer().duration_ms === 0
       && (this.timer().notes?.toLowerCase().includes('cancelled') || this.timer().notes?.toLowerCase().includes('canceled'));
+  }
+
+  isSkipped() {
+    return !!this.timer().is_skipped;
+  }
+
+  /** Pacific-local date (YYYY-MM-DD) of this timer's occurrence, used for skip/unskip. */
+  private timerDate(): string {
+    const ref = this.timer().started ?? this.timer().created_at;
+    return new Date(ref).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+  }
+
+  skipToday() {
+    const recurringId = this.timer().recurring_id;
+    if (!recurringId) return;
+    this.timerService.skipOccurrence(recurringId, this.timerDate()).subscribe();
+  }
+
+  unskipToday() {
+    const recurringId = this.timer().recurring_id;
+    if (!recurringId) return;
+    this.timerService.removeSkip(recurringId, this.timerDate()).subscribe();
   }
 
   hasMultipleSegments(): boolean {

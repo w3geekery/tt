@@ -543,14 +543,33 @@ server.tool('delete_recurring_timer', 'Delete a recurring timer.', {
   return { content: [{ type: 'text', text: ok ? 'Deleted' : 'Not found' }] };
 });
 
-server.tool('skip_recurring_timer', 'Skip a recurring timer for a specific date.', {
+server.tool('skip_recurring_timer', 'Skip an occurrence of a recurring timer on a specific date. If the timer was already running, it is zeroed out and a replacement timer starts at the original start time (ZeroBias UI General Development if its daily cap is not hit, else W3Geekery SME Mart General Development).', {
   recurring_id: z.string().describe('Recurring timer ID'),
   date: z.string().describe('Date to skip (YYYY-MM-DD)'),
 }, async ({ recurring_id, date }) => {
   const db = getDb();
-  const rec = recurringDb.skipDate(db, recurring_id, date);
-  if (!rec) return { content: [{ type: 'text', text: 'Not found' }] };
-  return { content: [{ type: 'text', text: `Skipping ${date}` }] };
+  const result = recurringDb.skipOccurrence(db, recurring_id, date);
+  if (!result) return { content: [{ type: 'text', text: 'Not found' }] };
+  const parts = [`Skipped ${date}`];
+  if (result.skippedTimer) parts.push(`zeroed timer ${result.skippedTimer.slug ?? result.skippedTimer.id}`);
+  if (result.replacementTimer) parts.push(`started replacement ${result.replacementTimer.slug ?? result.replacementTimer.id}`);
+  return { content: [{ type: 'text', text: parts.join('; ') }] };
+});
+
+server.tool('skip_timer', 'Skip an occurrence of a recurring timer identified by its timer slug (e.g. 260417-3). Resolves the timer to its parent recurring and today\'s Pacific date, then calls skip_recurring_timer with the same semantics.', {
+  slug: z.string().describe('Timer slug (e.g. 260417-3)'),
+}, async ({ slug }) => {
+  const db = getDb();
+  const timer = timersDb.findBySlug(db, slug);
+  if (!timer) return { content: [{ type: 'text', text: `Timer not found for slug ${slug}` }] };
+  if (!timer.recurring_id) return { content: [{ type: 'text', text: `Timer ${slug} is not a recurring timer; cannot skip` }] };
+  const ref = timer.started ?? timer.created_at;
+  const date = new Date(ref).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+  const result = recurringDb.skipOccurrence(db, timer.recurring_id, date);
+  if (!result) return { content: [{ type: 'text', text: 'Recurring parent not found' }] };
+  const parts = [`Skipped ${slug} for ${date}`];
+  if (result.replacementTimer) parts.push(`replacement ${result.replacementTimer.slug ?? result.replacementTimer.id} started at ${result.replacementTimer.started}`);
+  return { content: [{ type: 'text', text: parts.join('; ') }] };
 });
 
 server.tool('unskip_recurring_timer', 'Remove a skip for a recurring timer.', {

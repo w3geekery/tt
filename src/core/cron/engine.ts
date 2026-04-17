@@ -124,6 +124,7 @@ function autoStartPendingRecurring(db: Database.Database, now: Date): void {
   for (const row of pending) {
     const rec = recurringDb.findById(db, row.recurring_id);
     if (!rec?.start_time) continue;
+    if (rec.skipped_dates.includes(todayStr)) continue;
 
     const [h, m] = rec.start_time.split(':').map(Number);
     const startAt = new Date(now);

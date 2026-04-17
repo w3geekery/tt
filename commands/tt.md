@@ -55,7 +55,7 @@ All data operations use `mcp__tt__*` tools — no HTTP round-trips from MCP.
 | **Timer** | `start_timer`, `stop_timer`, `pause_timer`, `resume_timer`, `get_running_timer`, `cancel_timer`, `update_timer`, `delete_timer`, `add_entry`, `list_timers`, `get_timer_by_slug`, `schedule_timer` |
 | **Reports** | `daily_summary`, `weekly_summary`, `monthly_summary`, `invoice_report`, `get_cap_status`, `list_weekly_tasks` |
 | **Config** | `list/create/update/delete_company`, `list/create/update/delete_project`, `list/create/update/delete_task` |
-| **Recurring** | `create/list/delete_recurring_timer`, `skip/unskip_recurring_timer` |
+| **Recurring** | `create/list/delete_recurring_timer`, `skip/unskip_recurring_timer`, `skip_timer` (by slug) |
 | **Notifications** | `schedule/list/cancel_notification`, `get/set_timeline_hours` |
 
 ## Hour Allocation Rules
@@ -115,6 +115,16 @@ If no paused timer exists, inform Clark: "No paused timer to resume."
 
 #### `schedule <time> <company> [project] [task] [notes]`
 Call `schedule_timer` with `start_at` set to the specified time. The cron engine (runs every 30s in-process) will auto-start it when the time arrives. Use for pre-planning the day's timer switches.
+
+#### `skip <slug>`
+Skip today's occurrence of a recurring timer identified by its timer slug. Call `mcp__tt__skip_timer` with the slug.
+
+- If the timer hasn't started yet: just flags today's date on the parent (cron won't fire it) and the card shows as dimmed/Skipped.
+- If the timer is running: zeros out its duration (deletes segments, clears started/ended) and starts a replacement timer at the original start time — **ZeroBias UI General Development** if the daily ZB UI cap is not yet hit, otherwise **W3Geekery SME Mart General Development**.
+
+Examples:
+- `/tt skip 260417-3` — cancel today's Marketplace Meeting
+- `/tt skip 260417-2` — cancel today's Standup
 
 #### `start` (no args)
 Call `list_timers` for today. Show recent entries and let Clark pick one to start a new timer with same company/project/task.

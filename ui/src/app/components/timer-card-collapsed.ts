@@ -1,10 +1,11 @@
-import { Component, input, output } from '@angular/core';
+import { Component, inject, input, output } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { StopTimerMenuComponent } from './stop-timer-menu';
 import { DurationPipe } from '../pipes/duration.pipe';
 import { Timer } from '../models';
+import { TimerService } from '../services/timer.service';
 
 /**
  * Compact single-line view of a timer card used when the user collapses it
@@ -24,6 +25,7 @@ import { Timer } from '../models';
       [class.paused]="isPaused()"
       [class.scheduled]="isScheduled()"
       [class.cancelled]="isCancelled()"
+      [class.skipped]="isSkipped()"
       (click)="handleStripClick($event)"
     >
       @if (timer().slug) {
@@ -32,6 +34,9 @@ import { Timer } from '../models';
 
       @if (timer().recurring_id) {
         <mat-icon class="recurring-badge" title="Recurring">repeat</mat-icon>
+      }
+      @if (isSkipped()) {
+        <mat-icon class="skipped-badge" title="Skipped occurrence">event_busy</mat-icon>
       }
 
       <span class="letter-chips">
@@ -99,6 +104,16 @@ import { Timer } from '../models';
           <mat-icon>{{ timer().notify_on_switch ? 'notifications_active' : 'notifications_none' }}</mat-icon>
           Notify on activation
         </button>
+        @if (timer().recurring_id && !isSkipped()) {
+          <button mat-menu-item (click)="skipToday()">
+            <mat-icon>event_busy</mat-icon> Skip occurrence
+          </button>
+        }
+        @if (timer().recurring_id && isSkipped()) {
+          <button mat-menu-item (click)="unskipToday()">
+            <mat-icon>event_available</mat-icon> Unskip occurrence
+          </button>
+        }
         <button mat-menu-item (click)="onDelete.emit(timer().id)" class="delete-menu-item">
           <mat-icon color="warn">delete</mat-icon> Delete
         </button>
@@ -129,6 +144,8 @@ import { Timer } from '../models';
     .collapsed-card.paused { border-left: 4px solid #ff9800; }
     .collapsed-card.scheduled { border-left: 4px solid #ff9800; opacity: 0.85; }
     .collapsed-card.cancelled { border-left: 4px solid #666; opacity: 0.5; }
+    .collapsed-card.skipped { border-left: 4px solid #9c27b0; opacity: 0.55; }
+    .skipped-badge { font-size: 14px; width: 14px; height: 14px; color: #9c27b0; flex-shrink: 0; }
 
     .slug-chip {
       font-family: monospace;
@@ -234,6 +251,8 @@ export class TimerCardCollapsedComponent {
   onToggleNotify = output<void>();
   onStartEdit = output<void>();
 
+  private timerService = inject(TimerService);
+
   isRunning(): boolean {
     return this.timer().state === 'running';
   }
@@ -254,11 +273,33 @@ export class TimerCardCollapsedComponent {
       && (notes.includes('cancelled') || notes.includes('canceled'));
   }
 
+  isSkipped(): boolean {
+    return !!this.timer().is_skipped;
+  }
+
+  private timerDate(): string {
+    const ref = this.timer().started ?? this.timer().created_at;
+    return new Date(ref).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+  }
+
+  skipToday(): void {
+    const recurringId = this.timer().recurring_id;
+    if (!recurringId) return;
+    this.timerService.skipOccurrence(recurringId, this.timerDate()).subscribe();
+  }
+
+  unskipToday(): void {
+    const recurringId = this.timer().recurring_id;
+    if (!recurringId) return;
+    this.timerService.removeSkip(recurringId, this.timerDate()).subscribe();
+  }
+
   statusLabel(): string {
     if (this.isRunning()) return 'Running';
     if (this.isPaused()) return 'Paused';
     if (this.isScheduled()) return 'Scheduled';
     if (this.isCancelled()) return 'Cancelled';
+    if (this.isSkipped()) return 'Skipped';
     return 'Stopped';
   }
 
