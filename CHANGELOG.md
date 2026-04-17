@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.5](https://github.com/w3geekery/tt/compare/v0.1.4...v0.1.5) (2026-04-17)
+
+
+### Features
+
+* **tt:** skip recurring timer occurrence with running-timer handling ([b5adce2](https://github.com/w3geekery/tt/commit/b5adce2600318d96185e56d0951702d44d733f05))
+
 ### [0.1.4](https://github.com/w3geekery/tt/compare/v0.1.3...v0.1.4) (2026-04-16)
 
 
