@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.6](https://github.com/w3geekery/tt/compare/v0.1.5...v0.1.6) (2026-04-28)
+
+
+### Features
+
+* **tt:** inline segment editing + break notes ([8bd6c4d](https://github.com/w3geekery/tt/commit/8bd6c4d7b177168f8ffa4553f95a8648725daee2))
+
 ### [0.1.5](https://github.com/w3geekery/tt/compare/v0.1.4...v0.1.5) (2026-04-17)
 
 
