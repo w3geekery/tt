@@ -29,7 +29,7 @@ import { MarkdownEditorComponent } from './markdown-editor.component';
         @if (notes) {
           <app-markdown-view [content]="notes" />
         } @else {
-          <span class="placeholder">Click to add notes…</span>
+          <span class="placeholder">{{ placeholder }}</span>
         }
         <mat-icon class="edit-hint">edit</mat-icon>
       </div>
@@ -89,6 +89,7 @@ export class MarkdownNoteEditorComponent {
 
   @Input() notes: string = '';
   @Input() height: string = '180px';
+  @Input() placeholder: string = 'Click to add notes…';
 
   @Output() notesChanged = new EventEmitter<string>();
 

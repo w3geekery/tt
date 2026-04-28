@@ -142,6 +142,8 @@ For each billable timer, generate notes using this priority order:
 5. **PR references** — pull request deliverables.
 6. **Session goals** — lowest priority fallback.
 
+**Segment-level notes (additive):** If the timer has multiple segments and any segment has a non-empty `notes` field, fold those bullets into the proposed notes alongside the recap-derived bullets. Quick-fail when no segment has notes — don't block the per-segment fetch when there are 0 notes. Segment notes are user-authored and authoritative; never paraphrase or drop them. If a segment's note duplicates a recap bullet, dedupe in favor of the segment note (it was likely written closer to the work).
+
 **Content selection:** Use ALL sessions for the day — the timer's company determines billing, NOT the session's repo.
 
 **Unbillable filter — exclude from notes:**

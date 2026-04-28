@@ -103,6 +103,7 @@ export interface TimerSegment {
   ended: string | null;
   duration_ms: number | null; // Computed from (ended - started) by API, never stored
   notes: string | null;
+  break_note: string | null; // Describes the break that ended when this segment began; unused on first segment
   paused_at: string | null;
   resume_at: string | null;
   created_at: string;

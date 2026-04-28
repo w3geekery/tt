@@ -60,8 +60,12 @@ export class ApiService {
   }
 
   // Segments
+  patchSegment(timerId: string, segmentId: string, patch: { notes?: string; started?: string; ended?: string; break_note?: string }) {
+    return this.http.patch(`/api/timers/${timerId}/segments/${segmentId}`, patch);
+  }
+
   patchSegmentNotes(timerId: string, segmentId: string, notes: string) {
-    return this.http.patch(`/api/timers/${timerId}/segments/${segmentId}`, { notes });
+    return this.patchSegment(timerId, segmentId, { notes });
   }
 
   // Favorites

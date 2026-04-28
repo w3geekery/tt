@@ -168,6 +168,8 @@ import { TimerService } from '../services/timer.service';
             <app-segment-list
               [segments]="timer().segments!"
               (onEditNotes)="onSegmentNotesEdit($event)"
+              (onEditTime)="onSegmentTimeEdit($event)"
+              (onEditBreakNote)="onSegmentBreakNoteEdit($event)"
             />
           }
         }
@@ -469,7 +471,18 @@ export class TimerCardComponent implements OnInit, OnDestroy {
   }
 
   onSegmentNotesEdit(event: { segmentId: string; notes: string }) {
-    this.api.patchSegmentNotes(this.timer().id, event.segmentId, event.notes).subscribe();
+    this.api.patchSegment(this.timer().id, event.segmentId, { notes: event.notes }).subscribe();
+  }
+
+  onSegmentTimeEdit(event: { segmentId: string; started?: string; ended?: string }) {
+    const patch: { started?: string; ended?: string } = {};
+    if (event.started) patch.started = event.started;
+    if (event.ended) patch.ended = event.ended;
+    this.api.patchSegment(this.timer().id, event.segmentId, patch).subscribe();
+  }
+
+  onSegmentBreakNoteEdit(event: { segmentId: string; break_note: string }) {
+    this.api.patchSegment(this.timer().id, event.segmentId, { break_note: event.break_note }).subscribe();
   }
 
   ngOnInit() {

@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS timer_segments (
   started TEXT NOT NULL,
   ended TEXT,
   notes TEXT,
+  break_note TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -173,6 +174,9 @@ export function applySchema(db: Database.Database): void {
   const segCols = db.pragma('table_info(timer_segments)') as Array<{ name: string }>;
   if (segCols.some(c => c.name === 'duration_ms')) {
     db.exec('ALTER TABLE timer_segments DROP COLUMN duration_ms');
+  }
+  if (!segCols.some(c => c.name === 'break_note')) {
+    db.exec('ALTER TABLE timer_segments ADD COLUMN break_note TEXT');
   }
 
   // Migration: add slug columns to companies, projects, tasks if missing

@@ -219,11 +219,12 @@ server.tool('list_segments', 'List all segments for a timer.', {
   return { content: [{ type: 'text', text: JSON.stringify(segments, null, 2) }] };
 });
 
-server.tool('update_segment', 'Update a segment\'s start time, end time, or notes.', {
+server.tool('update_segment', 'Update a segment\'s start time, end time, notes, or break_note (note about the gap PRECEDING this segment).', {
   segment_id: z.string().describe('Segment ID'),
   started: z.string().optional().describe('Updated start time (ISO 8601)'),
   ended: z.string().optional().describe('Updated end time (ISO 8601)'),
   notes: z.string().optional().describe('Updated notes'),
+  break_note: z.string().optional().describe('Updated note describing the break preceding this segment'),
 }, async ({ segment_id, ...updates }) => {
   const db = getDb();
   const segment = timersDb.updateSegment(db, segment_id, updates);

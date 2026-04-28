@@ -267,15 +267,21 @@ timersRouter.get('/:timerId/segments', (req: Request, res: Response) => {
   res.json(segments);
 });
 
-// PATCH /api/timers/:timerId/segments/:segmentId — update segment notes, started, ended
+// PATCH /api/timers/:timerId/segments/:segmentId — update segment notes, started, ended, break_note
 timersRouter.patch('/:timerId/segments/:segmentId', (req: Request, res: Response) => {
   const db = getDb();
-  const { notes, started, ended } = req.body;
+  const { notes, started, ended, break_note } = req.body;
 
-  const segment = timersDb.updateSegment(db, req.params.segmentId as string, { notes, started, ended });
+  const segment = timersDb.updateSegment(db, req.params.segmentId as string, { notes, started, ended, break_note });
   if (!segment) {
     res.status(404).json({ error: 'Segment not found' });
     return;
+  }
+
+  // Broadcast the parent timer so connected clients re-render with updated segments.
+  const parent = timersDb.findById(db, segment.timer_id);
+  if (parent) {
+    broadcast('timer-updated', { type: 'timer-updated', data: enrichTimer(db, parent) });
   }
 
   res.json(segment);

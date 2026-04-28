@@ -74,6 +74,10 @@ export interface TimerSegment {
   started: string;
   ended?: string | null;
   notes?: string | null;
+  // Note about the break PRECEDING this segment (i.e., the gap between the previous
+  // segment's end and this segment's start). The first segment has no preceding break,
+  // so its break_note is unused.
+  break_note?: string | null;
   created_at: string;
   updated_at: string;
 }

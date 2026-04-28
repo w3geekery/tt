@@ -251,7 +251,7 @@ export function updateSegmentNotes(db: Database.Database, segmentId: string, not
   return db.prepare('SELECT * FROM timer_segments WHERE id = ?').get(segmentId) as TimerSegment;
 }
 
-export function updateSegment(db: Database.Database, segmentId: string, input: { started?: string; ended?: string; notes?: string | null }): TimerSegment | undefined {
+export function updateSegment(db: Database.Database, segmentId: string, input: { started?: string; ended?: string; notes?: string | null; break_note?: string | null }): TimerSegment | undefined {
   const segment = db.prepare('SELECT * FROM timer_segments WHERE id = ?').get(segmentId) as TimerSegment | undefined;
   if (!segment) return undefined;
 
@@ -260,6 +260,7 @@ export function updateSegment(db: Database.Database, segmentId: string, input: {
   if (input.started !== undefined) { fields.push('started = ?'); values.push(input.started); }
   if (input.ended !== undefined) { fields.push('ended = ?'); values.push(input.ended); }
   if (input.notes !== undefined) { fields.push('notes = ?'); values.push(input.notes); }
+  if (input.break_note !== undefined) { fields.push('break_note = ?'); values.push(input.break_note); }
   if (fields.length === 0) return segment;
 
   fields.push("updated_at = datetime('now')");
