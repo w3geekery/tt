@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.2.0](https://github.com/w3geekery/tt/compare/v0.1.6...v0.2.0) (2026-06-18)
+
+
+### Features
+
+* **tt:** stickies, reminders, branded invoices, split-week weekly_tasks ([c414c87](https://github.com/w3geekery/tt/commit/c414c8759f6970e01cdfc20c5da7823f983c769f))
+
 ### [0.1.6](https://github.com/w3geekery/tt/compare/v0.1.5...v0.1.6) (2026-04-28)
 
 
