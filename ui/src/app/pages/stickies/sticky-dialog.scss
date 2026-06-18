@@ -1,0 +1,153 @@
+// Keep-style sticky modal. The whole panel is the sticky's color; --sticky-fg/-dim are
+// the WCAG-contrast text colors (set inline from the component). The Crepe/Milkdown editor
+// is re-themed transparent so it inherits the panel color (same approach as the card).
+
+.sticky-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 18px 10px;
+  background: var(--sticky-bg);
+  color: var(--sticky-fg);
+  min-height: 100%;
+}
+
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.modal-title {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--sticky-fg);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+  padding: 2px 0;
+}
+
+// Pin lives top-right, Keep-style — angled when off, upright + solid when pinned.
+.pin-btn {
+  flex: none;
+  color: var(--sticky-fg);
+  opacity: 0.5;
+  transform: rotate(45deg);
+}
+
+.pin-btn .mat-icon { color: var(--sticky-fg); }
+
+.pin-btn.on {
+  opacity: 1;
+  transform: none;
+}
+
+.modal-title::placeholder { color: var(--sticky-fg-dim); }
+
+.modal-body { display: block; }
+
+// ── reminder + labels ────────────────────────────────────────────────────────
+.reminder-panel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+
+.reminder-panel .due-field { width: 230px; }
+
+.reminder-panel .lead {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lead-n,
+.lead-unit {
+  background: rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--sticky-fg-dim);
+  border-radius: 2px;
+  color: var(--sticky-fg);
+  padding: 4px 6px;
+  font: inherit;
+}
+
+.lead-n { width: 56px; }
+.lead-unit option { color: initial; }
+
+.labels-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.label-input {
+  flex: 1;
+  min-width: 160px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--sticky-fg-dim);
+  color: var(--sticky-fg);
+  outline: none;
+  padding: 4px 0;
+  font-size: 14px;
+}
+
+.label-input::placeholder { color: var(--sticky-fg-dim); }
+
+// ── bottom action bar ────────────────────────────────────────────────────────
+.action-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.action-bar .spacer { flex: 1; }
+
+.ab-btn {
+  color: var(--sticky-fg);
+  opacity: 0.78;
+  border-radius: 2px;
+}
+
+.ab-btn:hover { opacity: 1; }
+
+.ab-btn .mat-icon { color: var(--sticky-fg); }
+
+.ab-btn .caret {
+  margin-left: -8px;
+  width: 18px;
+  font-size: 18px;
+}
+
+.ab-btn.on { opacity: 1; }
+
+.close-btn {
+  color: var(--sticky-fg);
+  font-weight: 600;
+  border-radius: 2px;
+}
+
+// ── editor re-theme (transparent surfaces, contrast text) ─────────────────────
+.sticky-modal ::ng-deep {
+  .editor-wrapper { background: transparent; border-color: var(--sticky-fg-dim); border-radius: 4px; }
+  .editor-container { background: transparent; }
+  .milkdown { --crepe-color-outline: var(--sticky-fg-dim); }
+  .milkdown .ProseMirror { color: var(--sticky-fg); }
+  .milkdown .ProseMirror a { color: var(--sticky-fg); text-decoration: underline; }
+  .milkdown .ProseMirror code,
+  .milkdown .ProseMirror pre { background: rgba(0, 0, 0, 0.14); color: var(--sticky-fg); }
+  .milkdown .ProseMirror blockquote {
+    border-left-color: var(--sticky-fg-dim);
+    color: var(--sticky-fg-dim);
+  }
+  .milkdown .label-wrapper,
+  .milkdown .label-wrapper svg { color: var(--sticky-fg); fill: var(--sticky-fg); }
+}
+
+// ── swatch palette (rendered in an overlay menu, so styled globally below) ─────

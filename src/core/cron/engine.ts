@@ -18,8 +18,17 @@ import { runHook } from '../extensions.js';
 import { sendNotification } from './notify.js';
 import { syncState } from './state.js';
 import { broadcast } from '../server/sse.js';
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { resolve } from 'node:path';
 
 const TICK_MS = 30_000; // 30 seconds
+
+// SpecStory scanner health: the launchd job (com.w3geekery.specstory-scan) writes
+// this heartbeat on every successful run. If it goes stale, specstory_events stops
+// updating and backfill/invoices silently rot — so the cron surfaces it loudly.
+const SCANNER_HEARTBEAT_PATH = resolve(homedir(), '.tt', 'logs', 'specstory-scan.heartbeat');
+const SCANNER_STALE_HRS = 48; // daily job + slack for a sleeping laptop / weekend
 let intervalId: ReturnType<typeof setInterval> | null = null;
 
 export function startCron(db: Database.Database): void {
@@ -45,6 +54,7 @@ async function tick(db: Database.Database): Promise<void> {
     await fireNotifications(db);
     checkCapWarnings(db);
     await checkCaps(db);
+    checkScannerHealth(db);
     syncState(db);
   } catch (err) {
     console.error('[cron] tick error:', err);
@@ -345,6 +355,47 @@ async function checkCaps(db: Database.Database): Promise<void> {
       }
     }
   }
+}
+
+/**
+ * Surface a stalled SpecStory scanner. Reads the heartbeat the launchd job writes
+ * on every successful run; if it's older than SCANNER_STALE_HRS (or missing), raise
+ * one notification per PT day so a broken ingester is caught in a day, not weeks.
+ */
+function checkScannerHealth(db: Database.Database): void {
+  const { dateStr: todayPT } = pacificNow();
+
+  // One alert per day (dedup like cap warnings).
+  const alreadyAlerted = db.prepare(
+    `SELECT id FROM notifications WHERE type = 'scanner_stale' AND substr(created_at, 1, 10) = ?`,
+  ).get(todayPT);
+  if (alreadyAlerted) return;
+
+  let lastRunMs: number | null = null;
+  try {
+    const hb = JSON.parse(readFileSync(SCANNER_HEARTBEAT_PATH, 'utf-8')) as { last_run?: string };
+    lastRunMs = hb.last_run ? new Date(hb.last_run).getTime() : null;
+  } catch {
+    lastRunMs = null; // missing/unreadable heartbeat — treat as stale
+  }
+
+  const ageHrs = lastRunMs ? (Date.now() - lastRunMs) / 3600000 : Infinity;
+  if (ageHrs < SCANNER_STALE_HRS) return;
+
+  const ageDesc = Number.isFinite(ageHrs) ? `${Math.round(ageHrs)}h ago` : 'never';
+  sendNotification(
+    'SpecStory scan stale',
+    `Scanner last succeeded ${ageDesc} — specstory_events not updating; backfill/invoices will be incomplete.`,
+  );
+  const n = notificationsDb.create(db, {
+    type: 'scanner_stale',
+    title: 'SpecStory ingestion stale',
+    message: `Scanner heartbeat ${ageDesc} (threshold ${SCANNER_STALE_HRS}h). Check launchd com.w3geekery.specstory-scan and ~/.tt/logs/specstory-scan.log`,
+    trigger_at: new Date().toISOString(),
+  });
+  notificationsDb.markFired(db, n.id);
+  broadcast('notification:fired', { type: 'scanner_stale', age_hrs: Number.isFinite(ageHrs) ? Math.round(ageHrs) : null });
+  console.error(`[cron] SpecStory scanner stale — last run ${ageDesc}`);
 }
 
 /** Get autocap status for the currently running timer. */

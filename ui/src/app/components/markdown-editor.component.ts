@@ -41,6 +41,8 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   @Input() content: string = '';
   @Input() height: string = '180px';
   @Input() placeholder: string = '';
+  /** Hide the built-in icon toolbar — the host drives formatting commands itself (e.g. the stickies Format flyout). */
+  @Input() hideToolbar = false;
 
   @Output() contentChange = new EventEmitter<string>();
 

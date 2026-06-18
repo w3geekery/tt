@@ -3,7 +3,13 @@ import { isPlatformBrowser } from '@angular/common';
 import { Subject } from 'rxjs';
 
 export interface TimerEvent {
-  type: 'timer-created' | 'timer-updated' | 'timer-deleted';
+  type:
+    | 'timer-created'
+    | 'timer-updated'
+    | 'timer-deleted'
+    | 'sticky-created'
+    | 'sticky-updated'
+    | 'sticky-deleted';
   data: unknown;
 }
 

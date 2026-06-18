@@ -267,7 +267,8 @@ describe('Recurring API', () => {
     const skipped = await request(app)
       .post(`/api/timers/recurring/${created.body.id}/skip`)
       .send({ date: '2026-03-15' });
-    expect(skipped.body.skipped_dates).toEqual(['2026-03-15']);
+    // /skip now returns { recurring, skippedTimer, replacementTimer } (running-timer handling)
+    expect(skipped.body.recurring.skipped_dates).toEqual(['2026-03-15']);
 
     const unskipped = await request(app)
       .post(`/api/timers/recurring/${created.body.id}/unskip`)
@@ -338,5 +339,121 @@ describe('Cap Status API', () => {
     expect(res.body.projects[0].project).toBe('Capped');
     expect(res.body.projects[0].daily.cap).toBe(8);
     expect(res.body.projects[0].weekly.cap).toBe(40);
+  });
+});
+
+describe('Stickies API', () => {
+  beforeEach(() => { testDb = freshDb(); });
+
+  const futureIso = (): string => new Date(Date.now() + 86_400_000).toISOString();
+  const pastIso = (): string => new Date(Date.now() - 86_400_000).toISOString();
+
+  it('POST creates a sticky and returns it', async () => {
+    const res = await request(createApp()).post('/api/stickies').send({ title: 'buy milk' });
+    expect(res.status).toBe(201);
+    expect(res.body.title).toBe('buy milk');
+    expect(res.body.id).toBeTruthy();
+    expect(res.body.checked).toBe(false);
+  });
+
+  it('POST requires a title', async () => {
+    const res = await request(createApp()).post('/api/stickies').send({ body: 'no title' });
+    expect(res.status).toBe(400);
+  });
+
+  it('POST rejects an invalid due_at', async () => {
+    const res = await request(createApp()).post('/api/stickies').send({ title: 'x', due_at: 'nope' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid date/);
+  });
+
+  it('scope sugar maps to a scope tag and filters the list', async () => {
+    const app = createApp();
+    await request(app).post('/api/stickies').send({ title: 'global' });
+    await request(app).post('/api/stickies').send({ title: 'zb', scope: 'zb-ui' });
+    await request(app).post('/api/stickies').send({ title: 'sme', scope: 'sme-mart' });
+
+    const scoped = await request(app).get('/api/stickies?scope=zb-ui');
+    expect(scoped.status).toBe(200);
+    expect(scoped.body.map((s: { title: string }) => s.title).sort()).toEqual(['global', 'zb']);
+  });
+
+  it('GET /:id returns 404 for a missing sticky', async () => {
+    const res = await request(createApp()).get('/api/stickies/NOPE');
+    expect(res.status).toBe(404);
+  });
+
+  it('PATCH updates fields', async () => {
+    const app = createApp();
+    const created = await request(app).post('/api/stickies').send({ title: 'draft' });
+    const res = await request(app).patch(`/api/stickies/${created.body.id}`).send({ title: 'final' });
+    expect(res.status).toBe(200);
+    expect(res.body.title).toBe('final');
+  });
+
+  it('check / archive transitions work and exclude from the default open list', async () => {
+    const app = createApp();
+    const a = await request(app).post('/api/stickies').send({ title: 'a' });
+    const b = await request(app).post('/api/stickies').send({ title: 'b' });
+
+    expect((await request(app).post(`/api/stickies/${a.body.id}/check`)).body.checked).toBe(true);
+    expect((await request(app).post(`/api/stickies/${b.body.id}/archive`)).body.archived).toBe(true);
+
+    const open = await request(app).get('/api/stickies');
+    expect(open.body).toHaveLength(0);
+  });
+
+  it('reorder requires a numeric position', async () => {
+    const app = createApp();
+    const s = await request(app).post('/api/stickies').send({ title: 's' });
+    expect((await request(app).post(`/api/stickies/${s.body.id}/reorder`).send({})).status).toBe(400);
+    const ok = await request(app).post(`/api/stickies/${s.body.id}/reorder`).send({ position: 5 });
+    expect(ok.body.position).toBe(5);
+  });
+
+  it('PUT /:id/tags replaces the tag set', async () => {
+    const app = createApp();
+    const s = await request(app).post('/api/stickies').send({ title: 's', scope: 'tt' });
+    const res = await request(app).put(`/api/stickies/${s.body.id}/tags`).send({ tags: [{ key: 'topic', value: 'yoga' }] });
+    expect(res.status).toBe(200);
+    expect(res.body.tags).toEqual([{ key: 'topic', value: 'yoga' }]);
+  });
+
+  it('POST /checklist gathers children under a parent', async () => {
+    const app = createApp();
+    const parent = await request(app).post('/api/stickies').send({ title: 'list' });
+    const child = await request(app).post('/api/stickies').send({ title: 'item' });
+    const res = await request(app)
+      .post('/api/stickies/checklist')
+      .send({ parent_id: parent.body.id, child_ids: [child.body.id] });
+    expect(res.status).toBe(200);
+
+    const reloaded = await request(app).get(`/api/stickies/${child.body.id}`);
+    expect(reloaded.body.parent_id).toBe(parent.body.id);
+  });
+
+  it('GET /session returns due/overdue items', async () => {
+    const app = createApp();
+    await request(app).post('/api/stickies').send({ title: 'overdue', due_at: pastIso() });
+    await request(app).post('/api/stickies').send({ title: 'later', due_at: futureIso() });
+    const res = await request(app).get('/api/stickies/session');
+    expect(res.status).toBe(200);
+    expect(res.body.map((s: { title: string }) => s.title)).toEqual(['overdue']);
+  });
+
+  it('GET /grab pulls a grab-bag sticky, 404 when empty', async () => {
+    const app = createApp();
+    expect((await request(app).get('/api/stickies/grab')).status).toBe(404);
+    await request(app).post('/api/stickies').send({ title: 'someday' });
+    const res = await request(app).get('/api/stickies/grab');
+    expect(res.status).toBe(200);
+    expect(res.body.title).toBe('someday');
+  });
+
+  it('DELETE removes a sticky', async () => {
+    const app = createApp();
+    const s = await request(app).post('/api/stickies').send({ title: 'gone' });
+    expect((await request(app).delete(`/api/stickies/${s.body.id}`)).status).toBe(204);
+    expect((await request(app).get(`/api/stickies/${s.body.id}`)).status).toBe(404);
   });
 });

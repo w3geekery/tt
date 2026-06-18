@@ -1,3 +1,4 @@
+@if (!detached()) {
 <mat-toolbar color="primary">
   <span>Time Tracker</span>
   <span class="spacer"></span>
@@ -5,6 +6,7 @@
   <a mat-button routerLink="/today" routerLinkActive="active">Today</a>
   <a mat-button routerLink="/weekly" routerLinkActive="active">Weekly</a>
   <a mat-button routerLink="/monthly" routerLinkActive="active">Monthly</a>
+  <a mat-button routerLink="/stickies" routerLinkActive="active">Stickies</a>
   <button mat-icon-button (click)="refresh()" title="Refresh (R)">
     <mat-icon>refresh</mat-icon>
   </button>
@@ -12,6 +14,7 @@
     <mat-icon>settings</mat-icon>
   </button>
 </mat-toolbar>
+}
 
 <mat-menu #configMenu="matMenu">
   <div class="config-menu-toggle" (click)="$event.stopPropagation()">

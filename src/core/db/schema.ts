@@ -5,6 +5,7 @@
 
 import type Database from 'better-sqlite3';
 import { toSlug } from './entity-slug.js';
+import { derivePeriodStart } from './weekly-tasks.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS companies (
@@ -154,13 +155,78 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_favorite_templates_combo
 CREATE TABLE IF NOT EXISTS weekly_tasks (
   week_start TEXT NOT NULL,
   company TEXT NOT NULL,
+  period_start TEXT NOT NULL,
   zb_task_id TEXT NOT NULL,
   zb_task_code TEXT,
   zb_task_name TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
-  PRIMARY KEY (week_start, company)
+  PRIMARY KEY (week_start, company, period_start)
 );
+
+-- Invoice tracker: one row per semi-monthly billing period per stream (ZB | SM).
+-- Tracks status through the pipeline and whether/which weekly ZB task(s) were created.
+CREATE TABLE IF NOT EXISTS invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  stream TEXT NOT NULL,                  -- 'ZB' | 'SM'
+  company TEXT NOT NULL,                 -- 'ZeroBias' | 'W3Geekery'
+  period_label TEXT NOT NULL,            -- 'March 2026 - 2nd Half'
+  period_start TEXT NOT NULL,            -- '2026-03-16'
+  period_end TEXT NOT NULL,              -- '2026-03-31'
+  invoice_number TEXT,                   -- 'ZB0128' (when generated)
+  hours REAL,
+  amount REAL,
+  status TEXT NOT NULL DEFAULT 'unbilled', -- unbilled|backfilled|task_created|pdf_generated|submitted|paid
+  weekly_task_created INTEGER NOT NULL DEFAULT 0,
+  zb_task_ids TEXT,                      -- csv/json of linked weekly ZB task codes/ids
+  pdf_path TEXT,
+  date_submitted TEXT,
+  date_paid TEXT,
+  notes TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(stream, period_start)
+);
+
+-- No duplicate invoice numbers (partial: future/unbilled rows have NULL invoice_number).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_invoice_number
+  ON invoices(invoice_number) WHERE invoice_number IS NOT NULL;
+
+-- Personal notes/todos/reminders/checklists, decoupled from billing.
+-- A row with parent_id is a checklist child; a row with children renders as a checklist.
+CREATE TABLE IF NOT EXISTS stickies (
+  id TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+  parent_id TEXT REFERENCES stickies(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  body TEXT,
+  color TEXT,
+  due_at TEXT,
+  notify_enabled INTEGER NOT NULL DEFAULT 0,
+  notify_offset_n INTEGER,
+  notify_offset_unit TEXT CHECK (notify_offset_unit IN ('min', 'hour', 'day', 'month')),
+  checked INTEGER NOT NULL DEFAULT 0,
+  checked_at TEXT,
+  pinned INTEGER NOT NULL DEFAULT 0,
+  archived INTEGER NOT NULL DEFAULT 0,
+  archived_at TEXT,
+  position REAL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_stickies_parent ON stickies(parent_id);
+CREATE INDEX IF NOT EXISTS idx_stickies_due_at ON stickies(due_at);
+CREATE INDEX IF NOT EXISTS idx_stickies_board ON stickies(archived, pinned, position);
+
+-- Namespaced tags (key:value) for stickies, e.g. scope:zb-ui, topic:financial.
+CREATE TABLE IF NOT EXISTS sticky_tags (
+  sticky_id TEXT NOT NULL REFERENCES stickies(id) ON DELETE CASCADE,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  PRIMARY KEY (sticky_id, key, value)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sticky_tags_kv ON sticky_tags(key, value);
 `;
 
 export function applySchema(db: Database.Database): void {
@@ -200,6 +266,53 @@ export function applySchema(db: Database.Database): void {
       // Now add unique index
       db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_${table}_slug ON ${table}(slug)`);
     }
+  }
+
+  // Migration: link notifications to sticky reminders. Plain column (code-managed link,
+  // no DB FK) for portability — SQLite's ALTER ADD COLUMN ... REFERENCES is unreliable.
+  const notifCols = db.pragma('table_info(notifications)') as Array<{ name: string }>;
+  if (!notifCols.some(c => c.name === 'sticky_id')) {
+    db.exec('ALTER TABLE notifications ADD COLUMN sticky_id TEXT');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_sticky_id ON notifications(sticky_id)');
+  }
+
+  // Migration: add period_start to weekly_tasks PK so a calendar week can hold
+  // both halves of a split week (one task per semi-monthly invoice period).
+  // SQLite can't ALTER a PK, so rebuild the table. Backfill via the shared
+  // derivePeriodStart() helper — single source of truth for the half-month rule.
+  const wtCols = db.pragma('table_info(weekly_tasks)') as Array<{ name: string }>;
+  if (wtCols.length && !wtCols.some(c => c.name === 'period_start')) {
+    const rows = db.prepare('SELECT * FROM weekly_tasks').all() as Array<{
+      week_start: string; company: string; zb_task_id: string;
+      zb_task_code: string | null; zb_task_name: string | null;
+      created_at: string; updated_at: string;
+    }>;
+    const migrate = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE weekly_tasks_new (
+          week_start TEXT NOT NULL,
+          company TEXT NOT NULL,
+          period_start TEXT NOT NULL,
+          zb_task_id TEXT NOT NULL,
+          zb_task_code TEXT,
+          zb_task_name TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now')),
+          PRIMARY KEY (week_start, company, period_start)
+        )
+      `);
+      const ins = db.prepare(`
+        INSERT INTO weekly_tasks_new
+          (week_start, company, period_start, zb_task_id, zb_task_code, zb_task_name, created_at, updated_at)
+        VALUES (@week_start, @company, @period_start, @zb_task_id, @zb_task_code, @zb_task_name, @created_at, @updated_at)
+      `);
+      for (const r of rows) {
+        ins.run({ ...r, period_start: derivePeriodStart(r.week_start) });
+      }
+      db.exec('DROP TABLE weekly_tasks');
+      db.exec('ALTER TABLE weekly_tasks_new RENAME TO weekly_tasks');
+    });
+    migrate();
   }
 
   // One-time fix: sync single-segment timers so segment timestamps match timer timestamps.

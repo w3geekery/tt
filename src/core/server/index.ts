@@ -24,6 +24,7 @@ import { invoicesRouter } from './routes/invoices.js';
 import { autocapRouter } from './routes/autocap.js';
 import { templatesRouter } from './routes/templates.js';
 import { favoritesRouter } from './routes/favorites.js';
+import { stickiesRouter } from './routes/stickies.js';
 import { startCron } from '../cron/engine.js';
 
 export function createApp() {
@@ -51,6 +52,7 @@ export function createApp() {
   app.use('/api/autocap', autocapRouter);
   app.use('/api/templates', templatesRouter);
   app.use('/api/favorites', favoritesRouter);
+  app.use('/api/stickies', stickiesRouter);
   // Weekly tasks
   app.get('/api/weekly-tasks', (req: Request, res: Response) => {
     const db = getDb(config.db);
@@ -66,8 +68,27 @@ export function createApp() {
   });
   app.post('/api/weekly-tasks', (req: Request, res: Response) => {
     const db = getDb(config.db);
-    weeklyTasksDb.upsert(db, req.body);
-    res.status(201).json(req.body);
+    const body = req.body as Partial<weeklyTasksDb.WeeklyTask>;
+    if (!body.week_start || !body.company || !body.zb_task_id) {
+      return res.status(400).json({ error: 'week_start, company, and zb_task_id are required' });
+    }
+    let period_start = body.period_start;
+    if (!period_start) {
+      if (weeklyTasksDb.isSplitWeek(body.week_start)) {
+        return res.status(400).json({ error: `Week of ${body.week_start} is a split week; period_start is required (YYYY-MM-01 or YYYY-MM-16)` });
+      }
+      period_start = weeklyTasksDb.derivePeriodStart(body.week_start);
+    }
+    const task: weeklyTasksDb.WeeklyTask = {
+      week_start: body.week_start,
+      company: body.company,
+      period_start,
+      zb_task_id: body.zb_task_id,
+      zb_task_code: body.zb_task_code ?? null,
+      zb_task_name: body.zb_task_name ?? null,
+    };
+    weeklyTasksDb.upsert(db, task);
+    res.status(201).json(task);
   });
 
   app.get('/api/sse', sseHandler);

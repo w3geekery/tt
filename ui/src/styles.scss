@@ -53,6 +53,51 @@ html {
   border-radius: 0;
 }
 
+// Keep-style sticky modal: the colored .sticky-modal div fills the surface flush, so
+// zero the surface padding and clip to the rounded corners.
+.sticky-dialog-panel .mat-mdc-dialog-surface {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+// Sticky color swatch palette (rendered in a CDK overlay menu — must be styled globally).
+.swatch-menu .mat-mdc-menu-content { padding: 8px; }
+
+.swatch-menu .swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.swatch-menu .swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.swatch-menu .swatch.sel {
+  border-color: var(--mat-sys-on-surface);
+  box-shadow: 0 0 0 1px var(--mat-sys-surface);
+}
+
+.swatch-menu .swatch.none {
+  background: var(--mat-sys-surface-container-high);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.swatch-menu .swatch.none .mat-icon {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+}
+
 body {
   // Default to system preference — overridden by ThemeService
   color-scheme: light dark;

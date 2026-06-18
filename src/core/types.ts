@@ -123,11 +123,59 @@ export interface Notification {
   title: string;
   message?: string | null;
   timer_id?: string | null;
+  /** Logical link to a sticky reminder (code-managed; no DB FK). */
+  sticky_id?: string | null;
   trigger_at: string;
   fired_at?: string | null;
   dismissed: boolean;
   status: 'pending' | 'fired' | 'dismissed';
   created_at: string;
+}
+
+export type NotifyOffsetUnit = 'min' | 'hour' | 'day' | 'month';
+
+/** A namespaced tag on a sticky, e.g. { key: 'scope', value: 'zb-ui' }. */
+export interface StickyTag {
+  key: string;
+  value: string;
+}
+
+/**
+ * A "sticky" — a personal note/todo/reminder/checklist item, decoupled from billing.
+ * A sticky with a `parent_id` is a checklist child; a sticky with children renders as a checklist.
+ * Every sticky is full-fidelity (can own due/tags/color/notify), whether top-level or a child.
+ */
+export interface Sticky {
+  id: string;
+  parent_id?: string | null;
+  title: string;
+  body?: string | null;
+  color?: string | null;
+  due_at?: string | null;
+  notify_enabled: boolean;
+  notify_offset_n?: number | null;
+  notify_offset_unit?: NotifyOffsetUnit | null;
+  checked: boolean;
+  checked_at?: string | null;
+  pinned: boolean;
+  archived: boolean;
+  archived_at?: string | null;
+  /** Order among siblings (same parent_id). Fractional inserts allowed. */
+  position?: number | null;
+  created_at: string;
+  updated_at: string;
+  /** Assembled from sticky_tags. */
+  tags: StickyTag[];
+  /** Populated only when a query asks for nested children (checklist parents). */
+  children?: Sticky[];
+}
+
+/** Compact row for the SessionStart slice — smallest footprint. */
+export interface SessionStickyRow {
+  id: string;
+  title: string;
+  due_at?: string | null;
+  pinned: boolean;
 }
 
 // --- Extension hooks ---

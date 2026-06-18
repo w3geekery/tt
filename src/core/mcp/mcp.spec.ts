@@ -7,6 +7,8 @@ import * as tasksDb from '../db/tasks.js';
 import * as timersDb from '../db/timers.js';
 import * as recurringDb from '../db/recurring.js';
 import * as notificationsDb from '../db/notifications.js';
+import * as stickiesDb from '../db/stickies.js';
+import { syncStickyReminder, cancelStickyReminder, computeTriggerAt, STICKY_REMINDER_TYPE } from '../reminders.js';
 
 /**
  * MCP tool handlers are thin wrappers around DB modules.
@@ -291,5 +293,82 @@ describe('MCP tool logic: invoice_report', () => {
     expect(rows).toHaveLength(2);
     const totalMs = rows.reduce((sum, r) => sum + ((r.computed_ms as number) ?? 0), 0);
     expect(totalMs / 3600000).toBeCloseTo(12, 1); // 8h + 4h
+  });
+});
+
+describe('MCP tool logic: stickies + reminders', () => {
+  let db: Database.Database;
+  beforeEach(() => { db = freshDb(); });
+
+  const futureIso = (): string => new Date(Date.now() + 86_400_000).toISOString();
+
+  function pending() {
+    return notificationsDb.findPending(db).filter(n => n.type === STICKY_REMINDER_TYPE);
+  }
+
+  it('computeTriggerAt subtracts the offset from due_at', () => {
+    const due = '2026-07-01T09:00:00.000Z';
+    expect(computeTriggerAt(due, 30, 'min')).toBe('2026-07-01T08:30:00.000Z');
+    expect(computeTriggerAt(due, 2, 'hour')).toBe('2026-07-01T07:00:00.000Z');
+    expect(computeTriggerAt(due, 1, 'day')).toBe('2026-06-30T09:00:00.000Z');
+    expect(computeTriggerAt(due, 1, 'month')).toBe('2026-06-01T09:00:00.000Z');
+  });
+
+  it('create_sticky scopes via a scope tag', () => {
+    const s = stickiesDb.create(db, { title: 'fix flaky test', tags: [{ key: 'scope', value: 'zb-ui' }] });
+    expect(stickiesDb.list(db, { repo_scope: 'zb-ui' }).map(x => x.id)).toContain(s.id);
+    expect(stickiesDb.list(db, { repo_scope: 'sme-mart' }).map(x => x.id)).not.toContain(s.id);
+  });
+
+  it('schedules a reminder for a notify-enabled dated sticky', () => {
+    const s = stickiesDb.create(db, {
+      title: 'audit MEMORY.md',
+      due_at: futureIso(),
+      notify_enabled: true,
+      notify_offset_n: 2,
+      notify_offset_unit: 'day',
+    });
+    syncStickyReminder(db, s);
+    const reminders = pending();
+    expect(reminders).toHaveLength(1);
+    expect(reminders[0].sticky_id).toBe(s.id);
+    expect(reminders[0].trigger_at).toBe(computeTriggerAt(s.due_at!, 2, 'day'));
+  });
+
+  it('does not schedule when notify is off or there is no due date', () => {
+    const noNotify = stickiesDb.create(db, { title: 'a', due_at: futureIso() });
+    syncStickyReminder(db, noNotify);
+    const noDue = stickiesDb.create(db, { title: 'b', notify_enabled: true });
+    syncStickyReminder(db, noDue);
+    expect(pending()).toHaveLength(0);
+  });
+
+  it('reschedules on re-sync and cancels the prior reminder (no duplicates)', () => {
+    let s = stickiesDb.create(db, { title: 'r', due_at: futureIso(), notify_enabled: true });
+    syncStickyReminder(db, s);
+    expect(pending()).toHaveLength(1);
+
+    s = stickiesDb.update(db, s.id, { due_at: '2026-09-09T09:00:00.000Z' })!;
+    syncStickyReminder(db, s);
+    const reminders = pending();
+    expect(reminders).toHaveLength(1);
+    expect(reminders[0].trigger_at).toBe('2026-09-09T09:00:00.000Z');
+  });
+
+  it('cancels the reminder when the sticky is checked or archived', () => {
+    const s = stickiesDb.create(db, { title: 'r', due_at: futureIso(), notify_enabled: true });
+    syncStickyReminder(db, s);
+    expect(pending()).toHaveLength(1);
+
+    const checked = stickiesDb.check(db, s.id)!;
+    syncStickyReminder(db, checked);
+    expect(pending()).toHaveLength(0);
+  });
+
+  it('cancelStickyReminder clears pending reminders on delete', () => {
+    const s = stickiesDb.create(db, { title: 'r', due_at: futureIso(), notify_enabled: true });
+    syncStickyReminder(db, s);
+    expect(cancelStickyReminder(db, s.id)).toBe(1);
+    expect(pending()).toHaveLength(0);
   });
 });

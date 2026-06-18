@@ -218,3 +218,32 @@ export interface TimerTemplate {
   usage_count: number;
   last_used: string;
 }
+
+export interface StickyTag {
+  key: string;
+  value: string;
+}
+
+export type NotifyOffsetUnit = 'min' | 'hour' | 'day' | 'month';
+
+export interface Sticky {
+  id: string;
+  parent_id: string | null;
+  title: string;
+  body: string | null;
+  color: string | null;
+  due_at: string | null;
+  notify_enabled: boolean;
+  notify_offset_n: number | null;
+  notify_offset_unit: NotifyOffsetUnit | null;
+  checked: boolean;
+  checked_at: string | null;
+  pinned: boolean;
+  archived: boolean;
+  archived_at: string | null;
+  position: number | null;
+  created_at: string;
+  updated_at: string;
+  tags: StickyTag[];
+  children?: Sticky[];
+}

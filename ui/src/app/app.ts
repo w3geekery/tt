@@ -1,6 +1,6 @@
 import { Component, HostListener, OnInit, PLATFORM_ID, inject, signal } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
-import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
+import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -38,9 +38,12 @@ export class App implements OnInit {
   private dialog = inject(MatDialog);
   private sse = inject(SseService);
   private notifications = inject(NotificationsService);
+  private router = inject(Router);
   theme = inject(ThemeService);
   prefs = inject(PreferencesService);
   notifyOnCap = signal(true);
+  /** True when a view is popped out (?pop) — renders without the Time Tracker chrome. */
+  detached = signal(false);
   version = APP_VERSION;
 
   constructor(private auth: AuthService) {}
@@ -56,6 +59,10 @@ export class App implements OnInit {
   }
 
   ngOnInit() {
+    this.detached.set(this.isPopped(this.router.url));
+    this.router.events.subscribe((e) => {
+      if (e instanceof NavigationEnd) this.detached.set(this.isPopped(e.urlAfterRedirects));
+    });
     if (isPlatformBrowser(this.platformId)) {
       this.auth.checkSession();
       this.theme.init();
@@ -63,6 +70,11 @@ export class App implements OnInit {
         this.notifyOnCap.set(s.notify_on_cap !== false);
       });
     }
+  }
+
+  /** Popped-out windows carry ?pop and render bare (no toolbar/chrome). */
+  private isPopped(url: string): boolean {
+    return this.router.parseUrl(url).queryParamMap.has('pop');
   }
 
   toggleDarkMode() {

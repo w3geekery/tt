@@ -25,13 +25,15 @@ import { MarkdownEditorComponent } from './markdown-editor.component';
         </div>
       </div>
     } @else {
-      <div class="view-mode" (click)="startEdit()">
+      <div class="view-mode" [class.icon-mode]="editTrigger === 'icon'" (click)="onViewClick()">
         @if (notes) {
           <app-markdown-view [content]="notes" />
         } @else {
           <span class="placeholder">{{ placeholder }}</span>
         }
-        <mat-icon class="edit-hint">edit</mat-icon>
+        <button type="button" class="edit-hint-btn" (click)="penClick($event)" title="Edit">
+          <mat-icon class="edit-hint">edit</mat-icon>
+        </button>
       </div>
     }
   `,
@@ -47,23 +49,39 @@ import { MarkdownEditorComponent } from './markdown-editor.component';
       transition: border-color 0.15s ease, background-color 0.15s ease;
     }
 
+    /* In icon-mode, the body is read/selectable; only the pen enters edit. */
+    .view-mode.icon-mode {
+      cursor: text;
+      user-select: text;
+    }
+
     .view-mode:hover {
       border-color: var(--mat-sys-outline-variant);
       background: var(--mat-sys-surface-container-lowest);
     }
 
-    .view-mode:hover .edit-hint { opacity: 0.6; }
+    .view-mode:hover .edit-hint-btn,
+    .view-mode.icon-mode .edit-hint-btn { opacity: 0.7; }
+
+    .edit-hint-btn {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      padding: 2px;
+      border: none;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      opacity: 0;
+      line-height: 0;
+      transition: opacity 0.15s ease;
+    }
 
     .edit-hint {
-      position: absolute;
-      top: 4px;
-      right: 4px;
-      font-size: 14px;
-      width: 14px;
-      height: 14px;
-      opacity: 0;
-      color: var(--mat-sys-on-surface-variant);
-      transition: opacity 0.15s ease;
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+      color: inherit;
     }
 
     .placeholder {
@@ -90,11 +108,22 @@ export class MarkdownNoteEditorComponent {
   @Input() notes: string = '';
   @Input() height: string = '180px';
   @Input() placeholder: string = 'Click to add notes…';
+  /** 'body' (default): click anywhere to edit. 'icon': only the pen enters edit; body stays selectable. */
+  @Input() editTrigger: 'body' | 'icon' = 'body';
 
   @Output() notesChanged = new EventEmitter<string>();
 
   readonly editing = signal(false);
   editContent = '';
+
+  onViewClick(): void {
+    if (this.editTrigger === 'body') this.startEdit();
+  }
+
+  penClick(event: Event): void {
+    event.stopPropagation();
+    this.startEdit();
+  }
 
   startEdit(): void {
     this.editContent = this.notes || '';

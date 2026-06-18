@@ -7,6 +7,8 @@ export interface CreateNotificationInput {
   title: string;
   message?: string | null;
   timer_id?: string | null;
+  /** Logical link to a sticky reminder (code-managed; no DB FK). */
+  sticky_id?: string | null;
   trigger_at: string;
 }
 
@@ -30,9 +32,18 @@ export function create(db: Database.Database, input: CreateNotificationInput): N
   const id = randomUUID().replace(/-/g, '').toUpperCase();
   const now = new Date().toISOString();
   db.prepare(
-    `INSERT INTO notifications (id, type, title, message, timer_id, trigger_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, input.type, input.title, input.message ?? null, input.timer_id ?? null, input.trigger_at, now);
+    `INSERT INTO notifications (id, type, title, message, timer_id, sticky_id, trigger_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    id,
+    input.type,
+    input.title,
+    input.message ?? null,
+    input.timer_id ?? null,
+    input.sticky_id ?? null,
+    input.trigger_at,
+    now,
+  );
   return findById(db, id)!;
 }
 
@@ -49,6 +60,14 @@ export function dismiss(db: Database.Database, id: string): Notification | undef
 export function cancel(db: Database.Database, id: string): boolean {
   const result = db.prepare('DELETE FROM notifications WHERE id = ? AND fired_at IS NULL').run(id);
   return result.changes > 0;
+}
+
+/** Cancel all unfired notifications linked to a sticky. Returns the count removed. */
+export function cancelBySticky(db: Database.Database, stickyId: string): number {
+  const result = db
+    .prepare('DELETE FROM notifications WHERE sticky_id = ? AND fired_at IS NULL')
+    .run(stickyId);
+  return result.changes;
 }
 
 function mapRow(row: unknown): Notification {

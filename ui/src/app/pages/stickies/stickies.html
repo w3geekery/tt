@@ -1,0 +1,119 @@
+<div class="stickies-shell">
+  <header class="stickies-header">
+    <h1><mat-icon>sticky_note_2</mat-icon> Stickies</h1>
+    <div class="quick-add">
+      <!-- Click-anywhere trigger: opens the create modal with the title focused (no inline typing). -->
+      <mat-form-field
+        appearance="outline"
+        class="quick-add-field"
+        subscriptSizing="dynamic"
+        (click)="openCreate()"
+      >
+        <input matInput readonly placeholder="Add a sticky…" matTooltip="Add a sticky" />
+        <button matSuffix mat-icon-button aria-label="Add a sticky" tabindex="-1">
+          <mat-icon>add</mat-icon>
+        </button>
+      </mat-form-field>
+      <button mat-stroked-button (click)="grab()" matTooltip="Pull a random grab-bag sticky">
+        <mat-icon>casino</mat-icon> Grab
+      </button>
+      @if (!popped) {
+        <button mat-icon-button (click)="popOut()" matTooltip="Pop out to a floating window">
+          <mat-icon>open_in_new</mat-icon>
+        </button>
+      }
+    </div>
+  </header>
+
+  @if (loading() && stickies().length === 0) {
+    <p class="muted">Loading…</p>
+  } @else if (stickies().length === 0) {
+    <p class="muted">No open stickies. Add one above.</p>
+  }
+
+  <div class="board">
+    @for (s of stickies(); track s.id) {
+      <mat-card
+        class="sticky"
+        [class.pinned]="s.pinned"
+        (click)="openEdit(s)"
+        [style.background]="cardBg(s)"
+        [style.color]="cardFg(s)"
+        [style.--sticky-bg]="cardBg(s)"
+        [style.--sticky-fg]="cardFg(s)"
+        [style.--sticky-fg-dim]="cardDim(s)"
+        matTooltip="Click to open"
+        matTooltipShowDelay="600"
+      >
+        <div class="sticky-top">
+          @if (s.children?.length) {
+            <mat-checkbox [checked]="s.checked" (click)="$event.stopPropagation()" (change)="toggleCheck(s)" matTooltip="All items done" />
+          }
+          @if (editingTitleId() === s.id) {
+            <input
+              class="sticky-title title-input"
+              [class.indented]="!s.children?.length"
+              [(ngModel)]="titleDraft"
+              (click)="$event.stopPropagation()"
+              (blur)="commitTitle(s)"
+              (keydown.enter)="commitTitle(s)"
+            />
+          } @else {
+            <span
+              class="sticky-title"
+              [class.done]="s.checked"
+              [class.indented]="!s.children?.length"
+              (click)="startEditTitle(s, $event)"
+              matTooltip="Click to edit title"
+            >{{ s.title }}</span>
+          }
+          <button
+            mat-icon-button
+            class="pin-btn"
+            [class.on]="s.pinned"
+            (click)="togglePin(s, $event)"
+            [matTooltip]="s.pinned ? 'Unpin' : 'Pin'"
+          >
+            <mat-icon>push_pin</mat-icon>
+          </button>
+        </div>
+
+        @if (s.body) {
+          <div class="sticky-body">
+            <app-markdown-view [content]="s.body" />
+          </div>
+        }
+
+        @if (s.children?.length) {
+          <ul class="checklist">
+            @for (c of s.children; track c.id) {
+              <li>
+                <mat-checkbox [checked]="c.checked" (click)="$event.stopPropagation()" (change)="toggleCheck(c)" />
+                <span [class.done]="c.checked">{{ c.title }}</span>
+              </li>
+            }
+          </ul>
+        }
+
+        @if (s.due_at || topicTags(s).length || scopeTags(s).length) {
+          <div class="sticky-foot">
+            @if (s.due_at) {
+              <span class="due" [class.overdue]="isOverdue(s.due_at)">
+                <mat-icon>schedule</mat-icon>{{ formatDue(s.due_at) }}
+                @if (s.notify_enabled) {
+                  <mat-icon class="bell" matTooltip="Reminder set">notifications_active</mat-icon>
+                }
+              </span>
+            }
+            @for (t of scopeTags(s); track t.value) {
+              <span class="tag scope">{{ t.value }}</span>
+            }
+            @for (t of topicTags(s); track t.key + t.value) {
+              <span class="tag">{{ t.key }}:{{ t.value }}</span>
+            }
+          </div>
+        }
+      </mat-card>
+    }
+  </div>
+</div>

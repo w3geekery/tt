@@ -37,6 +37,9 @@ coverage/
 # Local plans (not in public repo)
 .claude/plans/local/
 
+# Director resume / planning state (local handoff docs, not in public repo)
+.planning/
+
 # Python cache
 __pycache__/
 *.pyc

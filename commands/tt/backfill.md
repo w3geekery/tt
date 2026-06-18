@@ -159,9 +159,9 @@ For each billable timer, generate notes using this priority order:
 | "General Development", "work", "dev", known generic patterns | **REPLACE** | Generated summary replaces |
 | "Overflow from ..." (cap spillover explanation) | **REPLACE** | Explains *why* timer exists, not *what was done* — replace |
 | Substantive (>10 chars, not generic/overflow) | **MERGE** | Append new bullets, deduplicate |
-| "Standup Meeting" task | **REPLACE** | Write: `- Daily standup` |
+| "Standup Meeting" task | **REPLACE** | `- Daily standup` — BUT first check Step 6 for a standup transcript; if one exists, summarize it in instead |
 | "Friday Demo" task | **REPLACE** | Write: `- Friday demo with team` |
-| "Marketplace Meeting" | **SKIP** | Keep as-is (substantive) |
+| "Marketplace Meeting" / huddle / 1:1 | **TRANSCRIPT** | Pull + summarize the transcript per Step 6 (don't SKIP). Only keep existing notes as-is if substantive AND no transcript exists |
 | No sessions for date | **REVIEW** | Flag for manual review |
 
 Show dry-run preview table, then ask for approval.
@@ -170,9 +170,23 @@ Show dry-run preview table, then ask for approval.
 
 Call `mcp__tt__update_timer` for each approved timer with the new notes.
 
-### Step 6: Marketplace Meetings
+### Step 6: Meeting Transcripts (REQUIRED — meeting transcripts are NOT in the SpecStory cache)
 
-If a Marketplace Meeting timer exists for the day, check `sme-mart/.claude/notes/meetings/YYYY-MM-DD-marketplace.md` for a summary and include highlights in the meeting timer notes.
+Meeting/huddle/standup transcripts live in their own files, **not** in SpecStory history, so the scanner/digest never surface them. For EVERY meeting-type timer on the day (Marketplace Meeting, Standup Meeting, Slack Huddle, 1:1, demo, ad-hoc), you MUST check the meeting-notes directory and fold the transcript content into the timer note. Brian meeting transcripts especially are RICH — use them; never settle for a bare "Marketplace meeting" bullet when a transcript exists.
+
+**Directory (authoritative):**
+```
+~/Projects/w3geekery/zerobias-org-forks/app/package/w3geekery/sme-mart/.planning/notes/meetings/
+```
+(The old `sme-mart/.claude/notes/meetings/` path is STALE — do not use it.)
+
+**Resolution per meeting timer, by the day being backfilled (`YYYY-MM-DD`):**
+1. **Distilled summary** — `meetings/YYYY-MM-DD-<type>.md` (e.g. `-marketplace.md`, `-slack-huddle-*.md`, `-kevin-huddle-*.md`, `-catalin-1-1.md`, `-ui-standup.md`). This is the preferred source — summarize its key decisions + action items into the note.
+2. **Raw transcript** — `meetings/processed/YYYY-MM-DD-*-transcript.{txt,docx,md}`. If a summary `.md` doesn't exist but a raw transcript does, read the transcript directly and summarize it.
+3. **Unprocessed drop** — `meetings/incoming/`. If a transcript for the day is sitting here unprocessed, flag it in the preview (offer to run `/tt:transcript` to process it first).
+4. **None found** — not every meeting is transcribed; fall back to the slot's session messages and note "(no transcript on file)" in the preview.
+
+Match by **date** (filenames are date-prefixed; meeting times aren't always in the filename). When multiple meetings share a date, match by type/title to the timer's task. Fold a tight summary (decisions, action items, who/what) into the meeting timer's notes — do not paste the raw transcript.
 
 ## Formatting Rule
 

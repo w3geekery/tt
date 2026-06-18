@@ -19,7 +19,9 @@ import * as tasksDb from '../db/tasks.js';
 import * as timersDb from '../db/timers.js';
 import * as recurringDb from '../db/recurring.js';
 import * as notificationsDb from '../db/notifications.js';
+import * as stickiesDb from '../db/stickies.js';
 import * as specstoryDb from '../db/specstory.js';
+import { syncStickyReminder, cancelStickyReminder } from '../reminders.js';
 import * as weeklyTasksDb from '../db/weekly-tasks.js';
 import * as favoritesDb from '../db/favorites.js';
 import { loadExtensions, runHook } from '../extensions.js';
@@ -506,6 +508,220 @@ server.tool('cancel_notification', 'Cancel an unfired notification.', {
   return { content: [{ type: 'text', text: ok ? 'Notification cancelled' : 'Not found or already fired' }] };
 });
 
+// --- Sticky tools (personal notes/todos/reminders/checklists) ---
+
+const stickyTagShape = z.array(z.object({ key: z.string(), value: z.string() }));
+
+server.tool(
+  'list_stickies',
+  'List personal stickies (notes/todos/reminders), scoped and bounded. Returns global + the given repo scope by default.',
+  {
+    repo_scope: z.string().optional().describe('Repo key (e.g. "zb-ui"); returns global + this scope. Omit for global+all.'),
+    status: z.enum(['open', 'checked', 'archived', 'all']).optional().describe('Default "open" (unchecked, unarchived)'),
+    include_children: z.boolean().optional().describe('Nest checklist children under each sticky'),
+    limit: z.number().int().optional().describe('Max items (default 50, max 100)'),
+  },
+  async ({ repo_scope, status, include_children, limit }) => {
+    const db = getDb();
+    const list = stickiesDb.list(db, { repo_scope, status, include_children, limit });
+    return { content: [{ type: 'text', text: JSON.stringify(list, null, 2) }] };
+  },
+);
+
+server.tool(
+  'get_session_stickies',
+  'Compact SessionStart slice: open stickies due now/overdue (any scope) plus repo-scoped undated todos for the given repo. For per-repo session hooks.',
+  {
+    repo_scope: z.string().optional().describe('Repo key for the current session'),
+    limit: z.number().int().optional().describe('Max items (default 10, max 50)'),
+  },
+  async ({ repo_scope, limit }) => {
+    const db = getDb();
+    const slice = stickiesDb.getSessionSlice(db, { repo_scope, limit });
+    return { content: [{ type: 'text', text: JSON.stringify(slice, null, 2) }] };
+  },
+);
+
+server.tool(
+  'create_sticky',
+  'Create a personal sticky. kind is implicit: no due_at = grab-bag (pull-on-demand); due_at + notify = reminder; otherwise a todo/note. Pass scope to tag it to a repo (omit for global).',
+  {
+    title: z.string().describe('Sticky title'),
+    body: z.string().optional().describe('Markdown body/notes'),
+    scope: z.string().optional().describe('Repo key to scope to (e.g. "zb-ui"). Omit for global.'),
+    parent_id: z.string().optional().describe('Parent sticky id to make this a checklist child'),
+    color: z.string().optional().describe('Color palette key'),
+    due_at: z.string().optional().describe('Due datetime (ISO 8601)'),
+    notify_enabled: z.boolean().optional().describe('Fire a reminder before due_at'),
+    notify_offset_n: z.number().int().optional().describe('Reminder lead amount'),
+    notify_offset_unit: z.enum(['min', 'hour', 'day', 'month']).optional().describe('Reminder lead unit'),
+    pinned: z.boolean().optional().describe('Pin to top of board'),
+    tags: stickyTagShape.optional().describe('Namespaced tags, e.g. [{key:"topic",value:"yoga"}]'),
+  },
+  async ({ scope, tags, ...rest }) => {
+    const db = getDb();
+    const allTags = [...(tags ?? [])];
+    if (scope && scope !== 'global') allTags.push({ key: 'scope', value: scope });
+    const sticky = stickiesDb.create(db, { ...rest, tags: allTags });
+    syncStickyReminder(db, sticky);
+    return { content: [{ type: 'text', text: JSON.stringify(stickiesDb.findById(db, sticky.id), null, 2) }] };
+  },
+);
+
+server.tool(
+  'update_sticky',
+  'Update a sticky. Re-syncs its reminder if timing/notify changed. Pass tags to replace the entire tag set.',
+  {
+    id: z.string().describe('Sticky id'),
+    title: z.string().optional(),
+    body: z.string().optional(),
+    color: z.string().optional(),
+    due_at: z.string().nullable().optional().describe('Due datetime (ISO 8601), or null to clear'),
+    notify_enabled: z.boolean().optional(),
+    notify_offset_n: z.number().int().nullable().optional(),
+    notify_offset_unit: z.enum(['min', 'hour', 'day', 'month']).nullable().optional(),
+    pinned: z.boolean().optional(),
+    parent_id: z.string().nullable().optional().describe('Reparent under a checklist, or null to detach'),
+    tags: stickyTagShape.optional(),
+  },
+  async ({ id, ...input }) => {
+    const db = getDb();
+    const sticky = stickiesDb.update(db, id, input);
+    if (!sticky) return { content: [{ type: 'text', text: `Sticky not found: ${id}` }] };
+    syncStickyReminder(db, sticky);
+    return { content: [{ type: 'text', text: JSON.stringify(sticky, null, 2) }] };
+  },
+);
+
+server.tool('check_sticky', 'Mark a sticky done (auto-checks the parent when all children are done).', {
+  id: z.string().describe('Sticky id'),
+}, async ({ id }) => {
+  const db = getDb();
+  const sticky = stickiesDb.check(db, id);
+  if (!sticky) return { content: [{ type: 'text', text: `Sticky not found: ${id}` }] };
+  syncStickyReminder(db, sticky);
+  return { content: [{ type: 'text', text: `Checked "${sticky.title}"` }] };
+});
+
+server.tool('uncheck_sticky', 'Reopen a checked sticky.', {
+  id: z.string().describe('Sticky id'),
+}, async ({ id }) => {
+  const db = getDb();
+  const sticky = stickiesDb.uncheck(db, id);
+  if (!sticky) return { content: [{ type: 'text', text: `Sticky not found: ${id}` }] };
+  syncStickyReminder(db, sticky);
+  return { content: [{ type: 'text', text: `Reopened "${sticky.title}"` }] };
+});
+
+server.tool('pin_sticky', 'Pin a sticky to the top of the board.', {
+  id: z.string().describe('Sticky id'),
+}, async ({ id }) => {
+  const db = getDb();
+  const sticky = stickiesDb.pin(db, id);
+  return { content: [{ type: 'text', text: sticky ? `Pinned "${sticky.title}"` : `Sticky not found: ${id}` }] };
+});
+
+server.tool('unpin_sticky', 'Unpin a sticky.', {
+  id: z.string().describe('Sticky id'),
+}, async ({ id }) => {
+  const db = getDb();
+  const sticky = stickiesDb.unpin(db, id);
+  return { content: [{ type: 'text', text: sticky ? `Unpinned "${sticky.title}"` : `Sticky not found: ${id}` }] };
+});
+
+server.tool('archive_sticky', 'Archive a sticky (hidden from the board, kept for history). Cancels its reminder.', {
+  id: z.string().describe('Sticky id'),
+}, async ({ id }) => {
+  const db = getDb();
+  const sticky = stickiesDb.archive(db, id);
+  if (!sticky) return { content: [{ type: 'text', text: `Sticky not found: ${id}` }] };
+  syncStickyReminder(db, sticky);
+  return { content: [{ type: 'text', text: `Archived "${sticky.title}"` }] };
+});
+
+server.tool('unarchive_sticky', 'Restore an archived sticky to the board.', {
+  id: z.string().describe('Sticky id'),
+}, async ({ id }) => {
+  const db = getDb();
+  const sticky = stickiesDb.unarchive(db, id);
+  if (!sticky) return { content: [{ type: 'text', text: `Sticky not found: ${id}` }] };
+  syncStickyReminder(db, sticky);
+  return { content: [{ type: 'text', text: `Restored "${sticky.title}"` }] };
+});
+
+server.tool('reorder_sticky', 'Set a sticky\'s board position among its siblings.', {
+  id: z.string().describe('Sticky id'),
+  position: z.number().describe('New position (fractional inserts allowed)'),
+}, async ({ id, position }) => {
+  const db = getDb();
+  const sticky = stickiesDb.reorder(db, id, position);
+  return { content: [{ type: 'text', text: sticky ? `Reordered "${sticky.title}"` : `Sticky not found: ${id}` }] };
+});
+
+server.tool('delete_sticky', 'Permanently delete a sticky (and its checklist children). Use archive to keep history.', {
+  id: z.string().describe('Sticky id'),
+}, async ({ id }) => {
+  const db = getDb();
+  cancelStickyReminder(db, id);
+  const ok = stickiesDb.remove(db, id);
+  return { content: [{ type: 'text', text: ok ? 'Deleted' : `Sticky not found: ${id}` }] };
+});
+
+server.tool('make_checklist', 'Gather existing stickies under a parent, turning it into a checklist.', {
+  parent_id: z.string().describe('Parent sticky id'),
+  child_ids: z.array(z.string()).describe('Sticky ids to nest under the parent'),
+}, async ({ parent_id, child_ids }) => {
+  const db = getDb();
+  const parent = stickiesDb.makeChecklist(db, parent_id, child_ids);
+  if (!parent) return { content: [{ type: 'text', text: `Parent not found: ${parent_id}` }] };
+  return { content: [{ type: 'text', text: JSON.stringify(stickiesDb.findById(db, parent_id), null, 2) }] };
+});
+
+server.tool('detach_sticky', 'Break a sticky out of its checklist (back to top-level).', {
+  id: z.string().describe('Sticky id'),
+}, async ({ id }) => {
+  const db = getDb();
+  const sticky = stickiesDb.detach(db, id);
+  return { content: [{ type: 'text', text: sticky ? `Detached "${sticky.title}"` : `Sticky not found: ${id}` }] };
+});
+
+server.tool('set_sticky_tags', 'Replace a sticky\'s entire tag set.', {
+  id: z.string().describe('Sticky id'),
+  tags: stickyTagShape.describe('Full namespaced tag set'),
+}, async ({ id, tags }) => {
+  const db = getDb();
+  const sticky = stickiesDb.setTags(db, id, tags);
+  return { content: [{ type: 'text', text: sticky ? JSON.stringify(sticky.tags, null, 2) : `Sticky not found: ${id}` }] };
+});
+
+server.tool('add_sticky_tag', 'Add one namespaced tag to a sticky.', {
+  id: z.string().describe('Sticky id'),
+  key: z.string().describe('Tag key (e.g. "scope", "topic")'),
+  value: z.string().describe('Tag value (e.g. "zb-ui", "yoga")'),
+}, async ({ id, key, value }) => {
+  const db = getDb();
+  const sticky = stickiesDb.addTag(db, id, key, value);
+  return { content: [{ type: 'text', text: sticky ? JSON.stringify(sticky.tags, null, 2) : `Sticky not found: ${id}` }] };
+});
+
+server.tool('remove_sticky_tag', 'Remove one namespaced tag from a sticky.', {
+  id: z.string().describe('Sticky id'),
+  key: z.string().describe('Tag key'),
+  value: z.string().describe('Tag value'),
+}, async ({ id, key, value }) => {
+  const db = getDb();
+  const sticky = stickiesDb.removeTag(db, id, key, value);
+  return { content: [{ type: 'text', text: sticky ? JSON.stringify(sticky.tags, null, 2) : `Sticky not found: ${id}` }] };
+});
+
+server.tool('grab_sticky', 'Pull one random open, undated grab-bag sticky to knock off (global or repo-scoped).', {
+  repo_scope: z.string().optional().describe('Repo key to include alongside global'),
+}, async ({ repo_scope }) => {
+  const db = getDb();
+  const sticky = stickiesDb.grab(db, repo_scope);
+  return { content: [{ type: 'text', text: sticky ? JSON.stringify(sticky, null, 2) : 'Grab bag is empty.' }] };
+});
+
 // --- Recurring timer tools ---
 
 server.tool('list_recurring_timers', 'List recurring timers.', {
@@ -775,10 +991,18 @@ server.tool('upsert_weekly_task', 'Assign a ZeroBias task for a company for the 
   zb_task_id: z.string().describe('ZeroBias task ID'),
   zb_task_code: z.string().optional().describe('Task code'),
   zb_task_name: z.string().optional().describe('Task name'),
-}, async ({ week_start, company, zb_task_id, zb_task_code, zb_task_name }) => {
+  period_start: z.string().optional().describe('Invoice half-month this task bills to (YYYY-MM-01 or YYYY-MM-16). Required on split weeks; otherwise derived from week_start.'),
+}, async ({ week_start, company, zb_task_id, zb_task_code, zb_task_name, period_start }) => {
   const db = getDb();
-  weeklyTasksDb.upsert(db, { week_start, company, zb_task_id, zb_task_code: zb_task_code ?? null, zb_task_name: zb_task_name ?? null });
-  return { content: [{ type: 'text' as const, text: `Assigned ${zb_task_name ?? zb_task_id} for ${company} week of ${week_start}` }] };
+  let resolvedPeriod = period_start;
+  if (!resolvedPeriod) {
+    if (weeklyTasksDb.isSplitWeek(week_start)) {
+      return { content: [{ type: 'text' as const, text: `Week of ${week_start} is a split week (straddles a 1st/16th invoice boundary). Pass period_start explicitly (YYYY-MM-01 or YYYY-MM-16).` }], isError: true };
+    }
+    resolvedPeriod = weeklyTasksDb.derivePeriodStart(week_start);
+  }
+  weeklyTasksDb.upsert(db, { week_start, company, period_start: resolvedPeriod, zb_task_id, zb_task_code: zb_task_code ?? null, zb_task_name: zb_task_name ?? null });
+  return { content: [{ type: 'text' as const, text: `Assigned ${zb_task_name ?? zb_task_id} for ${company} week of ${week_start} (period ${resolvedPeriod})` }] };
 });
 
 // --- Timeline settings ---
@@ -840,7 +1064,7 @@ server.tool('list_session_events', 'List cached SpecStory events (timestamped me
   return { content: [{ type: 'text' as const, text: JSON.stringify(events, null, 2) }] };
 });
 
-server.tool('daily_digest', 'Get a compact, backfill-optimized daily summary. Returns timer-aligned slots with recaps, PRs, and commit summaries (~2-3KB regardless of activity).', {
+server.tool('daily_digest', 'Get a backfill-optimized daily summary. Returns timer-aligned slots with recaps, PRs, commit summaries, AND a deduped sample of user-message intent per slot (message_count + messages) so un-recapped, message-only work is never invisible.', {
   date: z.string().optional().describe('Date (YYYY-MM-DD, defaults to today)'),
 }, async ({ date }) => {
   const db = getDb(config.db);

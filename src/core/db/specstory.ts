@@ -172,6 +172,12 @@ export interface DigestSlot {
   project: string;
   task: string;
   repos: Record<string, DigestRepoInfo>;
+  /** Count of user messages in the slot window (work happened even if un-recapped). */
+  message_count: number;
+  /** Sample of user-message intent (deduped, denoised, capped) — surfaced on
+   *  every slot as a PRIMARY signal, since recaps/commits are often partial or
+   *  absent and un-recapped work would otherwise be invisible. */
+  messages?: string[];
 }
 
 export interface DailyDigest {
@@ -223,20 +229,27 @@ function summarizeCommits(commits: Array<{ content: string | null }>): { count: 
 }
 
 /**
- * Query high-signal events (recaps, PRs, commits) for a date.
+ * Query high-signal events (recaps, PRs, commits) for a date, PLUS user messages
+ * (truncated) so slots with un-recapped, message-only work aren't invisible.
  * Commit content is truncated to the first line for prefix grouping.
  */
 export function findDigestEventsByDate(db: Database.Database, dateStr: string): SpecstoryEvent[] {
   return (db.prepare(`
     SELECT e.id, e.session_path, e.timestamp, e.date_pt, e.role, e.event_type, e.metadata,
-      CASE WHEN e.event_type = 'commit'
-        THEN substr(e.content, 1, CASE WHEN instr(e.content, char(10)) > 0 THEN instr(e.content, char(10)) - 1 ELSE 80 END)
+      CASE
+        WHEN e.event_type = 'commit'
+          THEN substr(e.content, 1, CASE WHEN instr(e.content, char(10)) > 0 THEN instr(e.content, char(10)) - 1 ELSE 80 END)
+        WHEN e.event_type = 'message'
+          THEN substr(replace(replace(e.content, char(10), ' '), char(13), ' '), 1, 200)
         ELSE e.content
       END as content,
       s.repo, s.company
     FROM specstory_events e
     JOIN specstory_sessions s ON s.path = e.session_path
-    WHERE e.date_pt = ? AND e.event_type IN ('session_recap', 'pr', 'commit')
+    WHERE e.date_pt = ? AND (
+      e.event_type IN ('session_recap', 'pr', 'commit')
+      OR (e.event_type = 'message' AND e.role = 'user')
+    )
     ORDER BY e.timestamp
   `).all(dateStr) as Array<Record<string, unknown>>).map(mapEvent);
 }
@@ -278,6 +291,22 @@ export function buildDailyDigest(
       repos[repo] = { recaps: data.recaps, prs: data.prs, commit_count: count, commit_summary: summary };
     }
 
+    // User messages are a PRIMARY signal (not a fallback): recaps/commits are
+    // often partial or absent, so surface deduped, denoised user-message intent
+    // on EVERY slot so un-recapped work is never invisible.
+    const slotMessages = slotEvents.filter(e => e.event_type === 'message');
+    const messages: string[] = [];
+    const seen = new Set<string>();
+    for (const e of slotMessages) {
+      const m = (e.content ?? '').trim();
+      if (m.length < 25) continue;                     // drop "yes please" / "thanks"
+      if (/[\u0000-\u0008\u001b]/.test(m)) continue;    // drop terminal-escape noise
+      if (seen.has(m)) continue;
+      seen.add(m);
+      messages.push(m);
+      if (messages.length >= 10) break;
+    }
+
     return {
       start_utc: timer.started,
       end_utc: timer.ended,
@@ -288,6 +317,8 @@ export function buildDailyDigest(
       project: timer.project_name,
       task: timer.task_name,
       repos,
+      message_count: slotMessages.length,
+      messages: messages.length ? messages : undefined,
     };
   });
 

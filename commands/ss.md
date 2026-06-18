@@ -2,6 +2,26 @@
 
 Cross-repo session aggregator. Scans all `.specstory/history/` folders under `~/Projects/zb/` and `~/Projects/w3geekery/`, groups sessions by company. All data cached in SQLite (`~/.tt/tt.db` → `specstory_sessions` table).
 
+## Path migration awareness (added 2026-04-27)
+
+W3Geekery forks of ZeroBias repos are being consolidated under `~/Projects/w3geekery/zb-forks/{com,org}/<repo>/` (replaces older `zerobias-org-forks/` and `zb-com-forks/` parent dirs).
+
+**Repos already moved:**
+- `zerobias-org-forks/{login,module,schema}` → `zb-forks/org/{login,module,schema}`
+- `zerobias-org-forks/zb-org-product` → `zb-forks/org/product` (prefix dropped)
+- `zerobias-org-forks/zb-org-vendor` → `zb-forks/org/vendor` (prefix dropped)
+- `zb-com-forks/login` → `zb-forks/com/login` (note: this is `zerobias-com/login`, distinct from `zerobias-org/login`)
+- New: `zb-forks/com/tag` (fork of `zerobias-com/tag`)
+
+**Still at old path** (deferred, will move at end of session): `zerobias-org-forks/app/` and `zerobias-org-forks/` parent CLAUDE.md.
+
+**Cache implications:**
+- SQLite `specstory_sessions` table is keyed by `path`. Sessions cached under old paths (`zerobias-org-forks/schema/.specstory/...`) now have orphaned entries — files no longer exist there.
+- If scanner re-indexes from new paths, the same .specstory file appears under TWO `path` entries (old orphan + new) → potential double-counting in reports.
+- **Cleanup recommended on first run after a move:** `sqlite3 ~/.tt/tt.db "DELETE FROM specstory_sessions WHERE path LIKE '%/zerobias-org-forks/login/%' OR path LIKE '%/zerobias-org-forks/module/%' OR path LIKE '%/zerobias-org-forks/schema/%' OR path LIKE '%/zerobias-org-forks/zb-org-product/%' OR path LIKE '%/zerobias-org-forks/zb-org-vendor/%' OR path LIKE '%/zb-com-forks/login/%'"`
+- After cleanup, run `mcp__tt__scan_sessions` to re-index from the new locations.
+- This warning can be removed once all moves complete and cache is verified clean.
+
 ## Usage
 
 **Arguments:** `$ARGUMENTS`

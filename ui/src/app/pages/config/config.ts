@@ -374,10 +374,16 @@ export class ConfigComponent implements OnInit, AfterViewInit {
       name: this.newTaskName.trim(),
       code: this.newTaskCode.trim() || null,
       url: this.newTaskUrl.trim() || null,
-    }).subscribe((t) => {
-      this.tasks.update((list) => [...list, t]);
-      this.addingTask.set(false);
-      this.snackBar.open('Task created', 'OK', { duration: 2000 });
+    }).subscribe({
+      next: (t) => {
+        this.tasks.update((list) => [...list, t]);
+        this.addingTask.set(false);
+        this.snackBar.open('Task created', 'OK', { duration: 2000 });
+      },
+      error: (err) => {
+        const msg = err?.error?.error || err?.message || 'Unknown error';
+        this.snackBar.open(`Create task failed: ${msg}`, 'Dismiss', { duration: 5000 });
+      },
     });
   }
 

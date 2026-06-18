@@ -265,6 +265,9 @@ export class NewTimerDialogComponent {
       this.data.tasks.push(task);
       this.taskId = task.id;
       this.creatingTask.set(false);
+    } catch (err: any) {
+      const msg = err?.error?.error || err?.message || 'Unknown error';
+      alert(`Create task failed: ${msg}`);
     } finally {
       this.saving.set(false);
     }

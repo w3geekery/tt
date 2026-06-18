@@ -1,5 +1,6 @@
 <div class="editor-wrapper" [style.height]="height">
-  <!-- Toolbar -->
+  <!-- Toolbar (hidden when the host drives commands itself, e.g. the stickies Format flyout) -->
+  @if (!hideToolbar) {
   <div class="editor-toolbar">
     <div class="toolbar-group">
       <button mat-icon-button matTooltip="Bold" (click)="toggleBold()" [disabled]="loading()">
@@ -62,6 +63,7 @@
       </button>
     </div>
   </div>
+  }
 
   <!-- Editor -->
   <div class="editor-container">

@@ -34,6 +34,10 @@ export const routes: Routes = [
     path: 'config',
     loadComponent: () => import('./pages/config/config').then((m) => m.ConfigComponent),
   },
+  {
+    path: 'stickies',
+    loadComponent: () => import('./pages/stickies/stickies').then((m) => m.StickiesComponent),
+  },
   // Redirects for old routes
   { path: 'daily', redirectTo: 'today', pathMatch: 'full' },
   { path: 'daily/:date', redirectTo: 'today/:date' },
