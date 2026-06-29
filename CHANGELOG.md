@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.3.0](https://github.com/w3geekery/tt/compare/v0.2.0...v0.3.0) (2026-06-29)
+
+
+### Features
+
+* **tt:** recurring notifications + spoken (voice/bell) delivery ([ad0d8c2](https://github.com/w3geekery/tt/commit/ad0d8c21937def1bdc30ebf723ea0b883a0e81bb))
+
 ## [0.2.0](https://github.com/w3geekery/tt/compare/v0.1.6...v0.2.0) (2026-06-18)
 
 
