@@ -19,6 +19,8 @@ import * as tasksDb from '../db/tasks.js';
 import * as timersDb from '../db/timers.js';
 import * as recurringDb from '../db/recurring.js';
 import * as notificationsDb from '../db/notifications.js';
+import * as recurringNotificationsDb from '../db/recurring-notifications.js';
+import { SPOKEN_VOICES } from '../types.js';
 import * as stickiesDb from '../db/stickies.js';
 import * as specstoryDb from '../db/specstory.js';
 import { syncStickyReminder, cancelStickyReminder } from '../reminders.js';
@@ -488,16 +490,19 @@ server.tool('list_notifications', 'List pending notifications.', {}, async () =>
   return { content: [{ type: 'text', text: JSON.stringify(notificationsDb.findPending(db), null, 2) }] };
 });
 
-server.tool('schedule_notification', 'Schedule a notification.', {
+server.tool('schedule_notification', 'Schedule a one-off notification. delivery="bell" plays a system sound; delivery="voice" speaks the message aloud via the macOS say voice.', {
   type: z.string().describe('Notification type'),
   title: z.string().describe('Notification title'),
   message: z.string().optional().describe('Notification message'),
   timer_id: z.string().optional().describe('Associated timer ID'),
   trigger_at: z.string().describe('When to trigger (ISO 8601)'),
+  delivery: z.enum(['bell', 'voice']).optional().describe('Audio channel: omit for silent banner, "bell" for banner+sound, "voice" to speak it aloud'),
+  voice: z.enum(SPOKEN_VOICES).optional().describe(`Voice for delivery="voice" (default ${SPOKEN_VOICES[0]})`),
 }, async (input) => {
   const db = getDb();
   const n = notificationsDb.create(db, input);
-  return { content: [{ type: 'text', text: `Scheduled notification "${n.title}" for ${n.trigger_at}` }] };
+  const how = n.delivery === 'voice' ? ` (spoken: ${n.voice ?? SPOKEN_VOICES[0]})` : n.delivery === 'bell' ? ' (bell)' : '';
+  return { content: [{ type: 'text', text: `Scheduled notification "${n.title}" for ${n.trigger_at}${how}` }] };
 });
 
 server.tool('cancel_notification', 'Cancel an unfired notification.', {
@@ -795,6 +800,68 @@ server.tool('unskip_recurring_timer', 'Remove a skip for a recurring timer.', {
 }, async ({ recurring_id, date }) => {
   const db = getDb();
   const rec = recurringDb.unskipDate(db, recurring_id, date);
+  if (!rec) return { content: [{ type: 'text', text: 'Not found' }] };
+  return { content: [{ type: 'text', text: `Unskipped ${date}` }] };
+});
+
+// --- Recurring notification tools (Alexa-style recurring reminders) ---
+
+server.tool('list_recurring_notifications', 'List recurring notification reminders.', {
+  active_only: z.boolean().optional().describe('Only show active (default true)'),
+}, async ({ active_only }) => {
+  const db = getDb();
+  const list = active_only !== false
+    ? recurringNotificationsDb.findActive(db)
+    : recurringNotificationsDb.findAll(db);
+  return { content: [{ type: 'text', text: JSON.stringify(list, null, 2) }] };
+});
+
+server.tool('create_recurring_notification', 'Create a recurring reminder that fires on a schedule. Fires at trigger_time (Pacific) on the matching days. delivery="voice" speaks it aloud. For "several times a week", use pattern="weekly" with weekdays, e.g. [1,3,5] for Mon/Wed/Fri.', {
+  title: z.string().describe('Reminder title (shown in the banner)'),
+  message: z.string().optional().describe('Reminder body (this is what gets spoken for delivery="voice")'),
+  pattern: z.enum(['daily', 'weekdays', 'weekly']).describe('daily = every day, weekdays = Mon-Fri, weekly = specific days via weekdays'),
+  weekdays: z.array(z.number().min(0).max(6)).optional().describe('Days for pattern="weekly" (0=Sun..6=Sat), e.g. [1,3,5] for Mon/Wed/Fri'),
+  trigger_time: z.string().describe('Pacific local time to fire (HH:MM, 24h)'),
+  start_date: z.string().describe('First eligible date (YYYY-MM-DD)'),
+  end_date: z.string().optional().describe('Last eligible date (YYYY-MM-DD); omit for indefinite'),
+  delivery: z.enum(['bell', 'voice']).optional().describe('Audio channel: omit for silent banner, "bell" for sound, "voice" to speak aloud'),
+  voice: z.enum(SPOKEN_VOICES).optional().describe(`Voice for delivery="voice" (default ${SPOKEN_VOICES[0]})`),
+  type: z.string().optional().describe('Notification type tag (default "reminder")'),
+}, async (input) => {
+  const db = getDb();
+  if (input.pattern === 'weekly' && (!input.weekdays || input.weekdays.length === 0)) {
+    return { content: [{ type: 'text', text: 'pattern="weekly" requires at least one weekday (0=Sun..6=Sat)' }] };
+  }
+  const rec = recurringNotificationsDb.create(db, input);
+  const days = rec.pattern === 'weekly' ? ` on ${rec.weekdays.join(',')}` : '';
+  const how = rec.delivery === 'voice' ? ` spoken by ${rec.voice ?? SPOKEN_VOICES[0]}` : rec.delivery === 'bell' ? ' with a bell' : '';
+  return { content: [{ type: 'text', text: `Created ${rec.pattern} reminder "${rec.title}" at ${rec.trigger_time}${days}${how} (${rec.id})` }] };
+});
+
+server.tool('delete_recurring_notification', 'Delete a recurring notification reminder.', {
+  recurring_notification_id: z.string().describe('Recurring notification ID'),
+}, async ({ recurring_notification_id }) => {
+  const db = getDb();
+  const ok = recurringNotificationsDb.remove(db, recurring_notification_id);
+  return { content: [{ type: 'text', text: ok ? 'Deleted' : 'Not found' }] };
+});
+
+server.tool('skip_recurring_notification', 'Skip a recurring notification on a specific date (removes any already-materialized reminder for that day).', {
+  recurring_notification_id: z.string().describe('Recurring notification ID'),
+  date: z.string().describe('Date to skip (YYYY-MM-DD)'),
+}, async ({ recurring_notification_id, date }) => {
+  const db = getDb();
+  const rec = recurringNotificationsDb.skipDate(db, recurring_notification_id, date);
+  if (!rec) return { content: [{ type: 'text', text: 'Not found' }] };
+  return { content: [{ type: 'text', text: `Skipped ${date}` }] };
+});
+
+server.tool('unskip_recurring_notification', 'Remove a skip for a recurring notification.', {
+  recurring_notification_id: z.string().describe('Recurring notification ID'),
+  date: z.string().describe('Date to unskip (YYYY-MM-DD)'),
+}, async ({ recurring_notification_id, date }) => {
+  const db = getDb();
+  const rec = recurringNotificationsDb.unskipDate(db, recurring_notification_id, date);
   if (!rec) return { content: [{ type: 'text', text: 'Not found' }] };
   return { content: [{ type: 'text', text: `Unskipped ${date}` }] };
 });

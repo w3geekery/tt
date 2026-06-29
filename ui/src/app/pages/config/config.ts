@@ -18,6 +18,7 @@ import { Company, Project, Task, Timer } from '../../models';
 import { DurationPipe } from '../../pipes/duration.pipe';
 import { ColorPickerComponent } from '../../components/color-picker';
 import { SkeletonComponent } from '../../components/skeleton';
+import { RecurringNotificationsManagerComponent } from '../../components/recurring-notifications-manager';
 
 @Component({
   selector: 'app-config',
@@ -36,6 +37,7 @@ import { SkeletonComponent } from '../../components/skeleton';
     DurationPipe,
     ColorPickerComponent,
     SkeletonComponent,
+    RecurringNotificationsManagerComponent,
   ],
   templateUrl: './config.html',
   styleUrl: './config.scss',

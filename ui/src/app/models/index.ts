@@ -119,6 +119,8 @@ export interface Notification {
   message: string | null;
   status: 'pending' | 'fired' | 'dismissed';
   timer_id: string | null;
+  delivery?: 'bell' | 'voice' | null;
+  voice?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -127,6 +129,36 @@ export interface UserSettings {
   timeline_start_hour: number;
   timeline_end_hour: number;
   notify_on_cap: boolean;
+}
+
+/** Audio channel for a notification: silent banner (null), 'bell' (banner + sound),
+ * or 'voice' (spoken aloud via the macOS say voice). */
+export type NotificationDelivery = 'bell' | 'voice';
+
+/** Voices Clark has installed for `say`, ranked; the first is the default. */
+export const SPOKEN_VOICES = ['Zoe (Premium)', 'Ava (Premium)', 'Fiona (Enhanced)'] as const;
+export type SpokenVoice = (typeof SPOKEN_VOICES)[number];
+
+export type RecurringNotificationPattern = 'daily' | 'weekdays' | 'weekly';
+
+export interface RecurringNotification {
+  id: string;
+  type: string;
+  title: string;
+  message: string | null;
+  pattern: RecurringNotificationPattern;
+  /** Weekdays (0=Sun..6=Sat) for pattern='weekly', e.g. [1,3,5] for Mon/Wed/Fri. */
+  weekdays: number[];
+  /** Pacific local wall-clock time, HH:MM. */
+  trigger_time: string;
+  start_date: string;
+  end_date: string | null;
+  delivery: NotificationDelivery | null;
+  voice: string | null;
+  active: boolean;
+  skipped_dates: string[];
+  created_at: string;
+  updated_at: string;
 }
 
 // Cap status types

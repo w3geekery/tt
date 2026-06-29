@@ -12,6 +12,8 @@ export class NotificationsService {
     title: string;
     message?: string | null;
     timer_id?: string | null;
+    delivery?: 'bell' | 'voice';
+    voice?: string;
   }) {
     return this.http.post<Notification>('/api/notifications', data);
   }

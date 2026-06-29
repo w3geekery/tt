@@ -9,6 +9,12 @@ export interface CreateNotificationInput {
   timer_id?: string | null;
   /** Logical link to a sticky reminder (code-managed; no DB FK). */
   sticky_id?: string | null;
+  /** Logical link to the recurring_notifications row that materialized this. */
+  recurring_notification_id?: string | null;
+  /** Audio channel: undefined/null = silent banner, 'bell' = banner+sound, 'voice' = spoken. */
+  delivery?: 'bell' | 'voice' | null;
+  /** macOS `say` voice for delivery='voice'. */
+  voice?: string | null;
   trigger_at: string;
 }
 
@@ -32,8 +38,9 @@ export function create(db: Database.Database, input: CreateNotificationInput): N
   const id = randomUUID().replace(/-/g, '').toUpperCase();
   const now = new Date().toISOString();
   db.prepare(
-    `INSERT INTO notifications (id, type, title, message, timer_id, sticky_id, trigger_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO notifications
+       (id, type, title, message, timer_id, sticky_id, recurring_notification_id, delivery, voice, trigger_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.type,
@@ -41,6 +48,9 @@ export function create(db: Database.Database, input: CreateNotificationInput): N
     input.message ?? null,
     input.timer_id ?? null,
     input.sticky_id ?? null,
+    input.recurring_notification_id ?? null,
+    input.delivery ?? null,
+    input.voice ?? null,
     input.trigger_at,
     now,
   );

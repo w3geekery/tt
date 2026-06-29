@@ -13,6 +13,7 @@ import type Database from 'better-sqlite3';
 import * as timersDb from '../db/timers.js';
 import * as recurringDb from '../db/recurring.js';
 import * as notificationsDb from '../db/notifications.js';
+import * as recurringNotificationsDb from '../db/recurring-notifications.js';
 import * as projectsDb from '../db/projects.js';
 import { runHook } from '../extensions.js';
 import { sendNotification } from './notify.js';
@@ -49,6 +50,7 @@ export function stopCron(): void {
 async function tick(db: Database.Database): Promise<void> {
   try {
     materializeRecurring(db);
+    materializeRecurringNotifications(db);
     autoStartScheduled(db);
     autoStopTimers(db);
     await fireNotifications(db);
@@ -177,6 +179,70 @@ function autoStopTimers(db: Database.Database): void {
   }
 }
 
+/**
+ * Convert a Pacific wall-clock time (date 'YYYY-MM-DD' + 'HH:MM') to a UTC ISO instant.
+ * DST-correct: probes the actual America/Los_Angeles offset for that date.
+ */
+export function pacificWallClockToUtcISO(dateStr: string, time: string): string {
+  const [Y, Mo, D] = dateStr.split('-').map(Number);
+  const [h, m] = time.split(':').map(Number);
+  // Interpret the wall clock as if it were UTC, then subtract the real PT offset.
+  const guess = Date.UTC(Y, (Mo ?? 1) - 1, D, h ?? 0, m ?? 0, 0);
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  });
+  const parts = dtf.formatToParts(new Date(guess));
+  const map: Record<string, number> = {};
+  for (const p of parts) if (p.type !== 'literal') map[p.type] = Number(p.value);
+  // Intl renders hour '24' for midnight in some environments; normalize.
+  const hour = map.hour === 24 ? 0 : map.hour;
+  const asUTC = Date.UTC(map.year, map.month - 1, map.day, hour, map.minute, map.second);
+  const offset = asUTC - guess; // local = utc + offset  ->  utc = guess - offset
+  return new Date(guess - offset).toISOString();
+}
+
+/**
+ * Materialize active recurring notifications into one-off `notifications` rows for today.
+ * Mirrors materializeRecurring(): one row per matching day, deduped by
+ * recurring_notification_id + the computed trigger_at. fireNotifications() then delivers it
+ * (bell/voice carried through) once trigger_at passes.
+ */
+export function materializeRecurringNotifications(db: Database.Database): void {
+  const { dateStr: todayStr, dayOfWeek } = pacificNow();
+
+  for (const rec of recurringNotificationsDb.findActive(db)) {
+    if (rec.start_date > todayStr) continue;
+    if (rec.end_date && rec.end_date < todayStr) continue;
+    if (rec.skipped_dates.includes(todayStr)) continue;
+
+    // Pattern match
+    if (rec.pattern === 'weekdays' && (dayOfWeek === 0 || dayOfWeek === 6)) continue;
+    if (rec.pattern === 'weekly' && !rec.weekdays.includes(dayOfWeek)) continue;
+
+    const triggerAt = pacificWallClockToUtcISO(todayStr, rec.trigger_time);
+
+    // Dedup: exact trigger_at is deterministic per (day, time), so a plain match is safe
+    // and sidesteps UTC-vs-Pacific date-boundary issues for late-evening reminders.
+    const existing = db.prepare(
+      'SELECT id FROM notifications WHERE recurring_notification_id = ? AND trigger_at = ?',
+    ).get(rec.id, triggerAt);
+    if (existing) continue;
+
+    const n = notificationsDb.create(db, {
+      type: rec.type,
+      title: rec.title,
+      message: rec.message,
+      trigger_at: triggerAt,
+      delivery: rec.delivery ?? null,
+      voice: rec.voice ?? null,
+      recurring_notification_id: rec.id,
+    });
+    broadcast('notification:scheduled', n);
+  }
+}
+
 /** Fire notifications whose trigger_at has passed. */
 async function fireNotifications(db: Database.Database): Promise<void> {
   const now = new Date().toISOString();
@@ -188,7 +254,10 @@ async function fireNotifications(db: Database.Database): Promise<void> {
     notificationsDb.markFired(db, n.id as string);
     // Strip dedup prefix [ID] from message before showing to user
     const displayMessage = ((n.message as string) ?? '').replace(/^\[[A-F0-9]+\]\s*/, '');
-    sendNotification(n.title as string, displayMessage);
+    sendNotification(n.title as string, displayMessage, {
+      delivery: (n.delivery as 'bell' | 'voice' | null) ?? null,
+      voice: (n.voice as string | null) ?? null,
+    });
     broadcast('notification:fired', n);
   }
 }

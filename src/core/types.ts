@@ -117,6 +117,17 @@ export interface RecurringTimer {
   updated_at: string;
 }
 
+/** How a notification reaches Clark: silent banner is the default; 'bell' adds a
+ * system sound; 'voice' speaks the message aloud via the macOS `say` CLI. */
+export type NotificationDelivery = 'bell' | 'voice';
+
+/** macOS `say` voices Clark has downloaded, ranked. The first is the default.
+ * The picker is restricted to these — only Spoken-Content/Live-Speech voices are
+ * callable from the `say` CLI (Siri/Personal Voice are not). */
+export const SPOKEN_VOICES = ['Zoe (Premium)', 'Ava (Premium)', 'Fiona (Enhanced)'] as const;
+export type SpokenVoice = (typeof SPOKEN_VOICES)[number];
+export const DEFAULT_SPOKEN_VOICE: SpokenVoice = 'Zoe (Premium)';
+
 export interface Notification {
   id: string;
   type: string;
@@ -125,11 +136,38 @@ export interface Notification {
   timer_id?: string | null;
   /** Logical link to a sticky reminder (code-managed; no DB FK). */
   sticky_id?: string | null;
+  /** Logical link to the recurring_notifications row that materialized this. */
+  recurring_notification_id?: string | null;
+  /** Audio channel: undefined/null = silent banner, 'bell' = banner + sound, 'voice' = spoken. */
+  delivery?: NotificationDelivery | null;
+  /** macOS voice for delivery='voice'. Falls back to DEFAULT_SPOKEN_VOICE. */
+  voice?: string | null;
   trigger_at: string;
   fired_at?: string | null;
   dismissed: boolean;
   status: 'pending' | 'fired' | 'dismissed';
   created_at: string;
+}
+
+export interface RecurringNotification {
+  id: string;
+  type: string;
+  title: string;
+  message?: string | null;
+  pattern: RecurringPattern;
+  /** Weekdays (0=Sun..6=Sat) the reminder fires on, for pattern='weekly'.
+   * Empty for 'daily'/'weekdays'. Lets one row cover e.g. Mon/Wed/Fri. */
+  weekdays: number[];
+  /** Local Pacific wall-clock time to fire (HH:MM). */
+  trigger_time: string;
+  start_date: string;
+  end_date?: string | null;
+  delivery?: NotificationDelivery | null;
+  voice?: string | null;
+  active: boolean;
+  skipped_dates: string[];
+  created_at: string;
+  updated_at: string;
 }
 
 export type NotifyOffsetUnit = 'min' | 'hour' | 'day' | 'month';

@@ -19,6 +19,7 @@ import { projectsRouter } from './routes/projects.js';
 import { tasksRouter } from './routes/tasks.js';
 import { capStatusRouter } from './routes/cap-status.js';
 import { notificationsRouter } from './routes/notifications.js';
+import { recurringNotificationsRouter } from './routes/recurring-notifications.js';
 import { recurringRouter } from './routes/recurring.js';
 import { invoicesRouter } from './routes/invoices.js';
 import { autocapRouter } from './routes/autocap.js';
@@ -47,6 +48,8 @@ export function createApp() {
   app.use('/api/projects', projectsRouter);
   app.use('/api/tasks', tasksRouter);
   app.use('/api/cap-status', capStatusRouter);
+  // recurring BEFORE notifications (so /api/notifications/recurring doesn't match /:id)
+  app.use('/api/notifications/recurring', recurringNotificationsRouter);
   app.use('/api/notifications', notificationsRouter);
   app.use('/api/invoices', invoicesRouter);
   app.use('/api/autocap', autocapRouter);

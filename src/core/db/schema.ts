@@ -139,6 +139,26 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Recurring reminder definitions. Materialized into one-off notifications rows
+-- each matching day by the cron engine (mirrors recurring_timers into timers).
+CREATE TABLE IF NOT EXISTS recurring_notifications (
+  id TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
+  type TEXT NOT NULL DEFAULT 'reminder',
+  title TEXT NOT NULL,
+  message TEXT,
+  pattern TEXT NOT NULL CHECK (pattern IN ('daily', 'weekdays', 'weekly')),
+  weekdays TEXT DEFAULT '[]',
+  trigger_time TEXT NOT NULL,
+  start_date TEXT NOT NULL,
+  end_date TEXT,
+  delivery TEXT,
+  voice TEXT,
+  active INTEGER DEFAULT 1,
+  skipped_dates TEXT DEFAULT '[]',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS favorite_templates (
   id TEXT PRIMARY KEY DEFAULT (hex(randomblob(16))),
   company_id TEXT NOT NULL REFERENCES companies(id),
@@ -274,6 +294,20 @@ export function applySchema(db: Database.Database): void {
   if (!notifCols.some(c => c.name === 'sticky_id')) {
     db.exec('ALTER TABLE notifications ADD COLUMN sticky_id TEXT');
     db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_sticky_id ON notifications(sticky_id)');
+  }
+
+  // Migration: spoken-notifier + recurring-notification support on existing notifications.
+  // delivery: NULL=silent banner (legacy), 'bell'=banner+sound, 'voice'=spoken via `say`.
+  // recurring_notification_id: code-managed link to the recurring def that materialized this row.
+  if (!notifCols.some(c => c.name === 'delivery')) {
+    db.exec('ALTER TABLE notifications ADD COLUMN delivery TEXT');
+  }
+  if (!notifCols.some(c => c.name === 'voice')) {
+    db.exec('ALTER TABLE notifications ADD COLUMN voice TEXT');
+  }
+  if (!notifCols.some(c => c.name === 'recurring_notification_id')) {
+    db.exec('ALTER TABLE notifications ADD COLUMN recurring_notification_id TEXT');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_recurring_notification_id ON notifications(recurring_notification_id)');
   }
 
   // Migration: add period_start to weekly_tasks PK so a calendar week can hold

@@ -34,6 +34,7 @@
     "@types/pg": "^8.20.0",
     "@types/supertest": "^7.2.0",
     "concurrently": "^9.0.0",
+    "jsdom": "^29.1.1",
     "standard-version": "^9.5.0",
     "supertest": "^7.2.2",
     "tsx": "^4.0.0",

@@ -420,14 +420,17 @@ export class WeeklyComponent implements OnInit, OnDestroy {
     return this.notificationsByDay().get(date) ?? [];
   }
 
-  onAddNotification(date: string, event: { time: string; title: string }) {
+  onAddNotification(date: string, event: { time: string; title: string; delivery?: 'bell' | 'voice'; voice?: string }) {
     this.notificationsService.create({
       trigger_at: event.time,
       type: 'manual',
       title: event.title,
+      delivery: event.delivery,
+      voice: event.voice,
     }).subscribe(() => {
       this.loadWeekNotifications();
-      this.snackBar.open('Notification scheduled', 'OK', { duration: 2000 });
+      const how = event.delivery === 'voice' ? ' (spoken)' : event.delivery === 'bell' ? ' (bell)' : '';
+      this.snackBar.open(`Notification scheduled${how}`, 'OK', { duration: 2000 });
     });
   }
 

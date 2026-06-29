@@ -3,7 +3,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatIconModule } from '@angular/material/icon';
 import { Notification, UserSettings } from '../models';
-import { AddNotificationPopoverComponent } from './add-notification-popover';
+import { AddNotificationPopoverComponent, AddNotificationEvent } from './add-notification-popover';
 
 @Component({
   selector: 'app-notification-timeline',
@@ -199,7 +199,7 @@ export class NotificationTimelineComponent implements AfterViewInit, OnInit, OnD
   date = input.required<string>(); // YYYY-MM-DD
   settings = input<UserSettings>({ timeline_start_hour: 5, timeline_end_hour: 19, notify_on_cap: true });
 
-  onAddNotification = output<{ time: string; title: string }>();
+  onAddNotification = output<AddNotificationEvent>();
 
   container = viewChild.required<ElementRef>('container');
 
@@ -376,7 +376,7 @@ export class NotificationTimelineComponent implements AfterViewInit, OnInit, OnD
     this.hoverX.set(null);
   }
 
-  onPopoverAdd(event: { time: string; title: string }) {
+  onPopoverAdd(event: AddNotificationEvent) {
     this.showPopover.set(false);
     this.onAddNotification.emit(event);
   }

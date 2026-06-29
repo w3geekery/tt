@@ -5,6 +5,7 @@ export * as tasks from './tasks.js';
 export * as timers from './timers.js';
 export * as recurring from './recurring.js';
 export * as notifications from './notifications.js';
+export * as recurringNotifications from './recurring-notifications.js';
 export * as stickies from './stickies.js';
 export * as specstory from './specstory.js';
 export { generateSlug } from './slug.js';

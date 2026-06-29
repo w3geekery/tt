@@ -296,14 +296,17 @@ export class DailyComponent implements OnInit, OnDestroy {
     });
   }
 
-  onAddNotification(event: { time: string; title: string }) {
+  onAddNotification(event: { time: string; title: string; delivery?: 'bell' | 'voice'; voice?: string }) {
     this.notificationsService.create({
       trigger_at: event.time,
       type: 'manual',
       title: event.title,
+      delivery: event.delivery,
+      voice: event.voice,
     }).subscribe(() => {
       this.loadNotifications();
-      this.snackBar.open('Notification scheduled', 'OK', { duration: 2000 });
+      const how = event.delivery === 'voice' ? ' (spoken)' : event.delivery === 'bell' ? ' (bell)' : '';
+      this.snackBar.open(`Notification scheduled${how}`, 'OK', { duration: 2000 });
     });
   }
 
