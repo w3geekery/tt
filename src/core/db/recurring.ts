@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { RecurringTimer, Timer } from '../types.js';
+import type { RecurringTimer, Timer, RecurringPattern } from '../types.js';
 import { randomUUID } from 'node:crypto';
 import * as timersDb from './timers.js';
 
@@ -16,7 +16,7 @@ export interface CreateRecurringInput {
 }
 
 export interface UpdateRecurringInput {
-  pattern?: 'daily' | 'weekly';
+  pattern?: RecurringPattern;
   weekday?: number | null;
   start_time?: string | null;
   end_date?: string | null;

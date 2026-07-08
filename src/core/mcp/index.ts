@@ -804,6 +804,22 @@ server.tool('unskip_recurring_timer', 'Remove a skip for a recurring timer.', {
   return { content: [{ type: 'text', text: `Unskipped ${date}` }] };
 });
 
+server.tool('update_recurring_timer', 'Update a recurring timer in place (e.g. change its start_time). Only the fields you pass change; the rest are left as-is. Does not touch already-materialized past occurrences or the skipped-dates list.', {
+  recurring_id: z.string().describe('Recurring timer ID'),
+  pattern: z.enum(['daily', 'weekdays', 'weekly']).optional().describe('Recurrence pattern'),
+  weekday: z.number().min(0).max(6).nullable().optional().describe('Day of week (0=Sun..6=Sat) for weekly'),
+  start_time: z.string().nullable().optional().describe('Start time (HH:MM, 24h)'),
+  end_date: z.string().nullable().optional().describe('End date (YYYY-MM-DD), or null to clear'),
+  notes: z.string().nullable().optional().describe('Notes'),
+  active: z.boolean().optional().describe('Active flag'),
+}, async ({ recurring_id, ...fields }) => {
+  const db = getDb();
+  const rec = recurringDb.update(db, recurring_id, fields);
+  if (!rec) return { content: [{ type: 'text', text: 'Not found' }] };
+  const day = rec.weekday != null ? ` weekday ${rec.weekday}` : '';
+  return { content: [{ type: 'text', text: `Updated recurring timer ${rec.id}: ${rec.pattern}${day} at ${rec.start_time ?? '(no time)'}${rec.active ? '' : ' [inactive]'}` }] };
+});
+
 // --- Recurring notification tools (Alexa-style recurring reminders) ---
 
 server.tool('list_recurring_notifications', 'List recurring notification reminders.', {
@@ -864,6 +880,29 @@ server.tool('unskip_recurring_notification', 'Remove a skip for a recurring noti
   const rec = recurringNotificationsDb.unskipDate(db, recurring_notification_id, date);
   if (!rec) return { content: [{ type: 'text', text: 'Not found' }] };
   return { content: [{ type: 'text', text: `Unskipped ${date}` }] };
+});
+
+server.tool('update_recurring_notification', 'Update a recurring reminder in place (e.g. change trigger_time or delivery). Only the fields you pass change; the rest are left as-is. Note: a reminder already materialized for today keeps its old settings — skip today if you want the change to apply immediately.', {
+  recurring_notification_id: z.string().describe('Recurring notification ID'),
+  title: z.string().optional().describe('Reminder title (shown in the banner)'),
+  message: z.string().nullable().optional().describe('Reminder body (spoken for delivery="voice")'),
+  pattern: z.enum(['daily', 'weekdays', 'weekly']).optional().describe('daily / weekdays / weekly'),
+  weekdays: z.array(z.number().min(0).max(6)).optional().describe('Days for pattern="weekly" (0=Sun..6=Sat)'),
+  trigger_time: z.string().optional().describe('Pacific local time to fire (HH:MM, 24h)'),
+  end_date: z.string().nullable().optional().describe('Last eligible date (YYYY-MM-DD), or null to clear'),
+  delivery: z.enum(['bell', 'voice']).nullable().optional().describe('"bell" = sound, "voice" = spoken, null = silent banner'),
+  voice: z.enum(SPOKEN_VOICES).nullable().optional().describe(`Voice for delivery="voice" (default ${SPOKEN_VOICES[0]})`),
+  active: z.boolean().optional().describe('Active flag'),
+}, async ({ recurring_notification_id, ...fields }) => {
+  const db = getDb();
+  if (fields.pattern === 'weekly' && fields.weekdays && fields.weekdays.length === 0) {
+    return { content: [{ type: 'text', text: 'pattern="weekly" requires at least one weekday (0=Sun..6=Sat)' }] };
+  }
+  const rec = recurringNotificationsDb.update(db, recurring_notification_id, fields);
+  if (!rec) return { content: [{ type: 'text', text: 'Not found' }] };
+  const days = rec.pattern === 'weekly' ? ` on ${rec.weekdays.join(',')}` : '';
+  const how = rec.delivery === 'voice' ? ` spoken by ${rec.voice ?? SPOKEN_VOICES[0]}` : rec.delivery === 'bell' ? ' with a bell' : ' (silent)';
+  return { content: [{ type: 'text', text: `Updated "${rec.title}" -> ${rec.pattern} at ${rec.trigger_time}${days}${how}${rec.active ? '' : ' [inactive]'}` }] };
 });
 
 // --- Invoice report ---
